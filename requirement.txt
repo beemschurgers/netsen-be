@@ -1,1 +1,4 @@
-pip install fastapi uvicorn[standard] scapy
+fastapi 
+uvicorn
+'uvicorn[standard]' websocket
+scapy
