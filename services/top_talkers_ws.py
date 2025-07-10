@@ -1,12 +1,11 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import WebSocket, WebSocketDisconnect
 from scapy.all import sniff, IP
 from collections import defaultdict
 import asyncio
 import threading
 import json
 
-async def top_talkers_websocket(websocket):
+async def top_talkers_websocket(websocket: WebSocket):
     await websocket.accept()
     loop = asyncio.get_running_loop()
     ip_counter = defaultdict(int)
@@ -23,12 +22,16 @@ async def top_talkers_websocket(websocket):
 
     try:
         while True:
-            # Get top 5 IPs
+            # Send top 5 IPs
             top = sorted(ip_counter.items(), key=lambda x: x[1], reverse=True)[:5]
             data = [{"ip": ip, "count": count} for ip, count in top]
             await websocket.send_text(json.dumps(data))
-            await asyncio.sleep(2)  # adjust frequency
-    except:
+            await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+    finally:
         stop_event.set()
         sniff_thread.join()
-        await websocket.close()
+

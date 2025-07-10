@@ -1,5 +1,6 @@
 from fastapi import APIRouter, WebSocket
 from services.packet_capture import start_packet_capture
+from services.threats_ws import threats_websocket
 from services.top_talkers_ws import top_talkers_websocket
 from services.devices_ws import device_ws
 router = APIRouter()
@@ -17,6 +18,11 @@ async def top_talkers_endpoint(websocket: WebSocket):
 @router.websocket("/ws/devices")
 async def devices_endpoint(websocket: WebSocket):
     await device_ws(websocket)
+
+
+@router.websocket("/ws/threats")
+async def websocket_threats(websocket: WebSocket):
+    await threats_websocket(websocket)
 
 
 
