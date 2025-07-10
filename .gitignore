@@ -1,4 +1,5 @@
 main_api_only.py
 routes/html_routes.py
-templates/
 *.pkl
+__pycache__/
+start_conda.bat

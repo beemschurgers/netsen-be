@@ -45,7 +45,7 @@ class MLModelService:
         
         # Columns as per Merged_dropped.txt
         feature_columns = [
-            'Protocol Type', 'Time_To_Live', 'Rate',
+            'Header_Length', 'Protocol Type', 'Time_To_Live', 'Rate',
             'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
             'ack_flag_number', 'ece_flag_number', 'cwr_flag_number',
             'HTTP', 'HTTPS', 'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC',
@@ -58,6 +58,7 @@ class MLModelService:
         
         # Basic packet information
         features['Tot sum'] = self.packet_stats['total_size'] + len(packet)
+        features['Header_Length'] = len(packet) - len(packet.payload) if packet.payload else len(packet) #
         
         # Protocol type (convert to numeric)
         if packet.haslayer(IP):
@@ -128,8 +129,8 @@ class MLModelService:
         features['Max'] = max(len(packet), self.packet_stats.get('max_size', 0))
         
         # Update min/max tracking
-        self.packet_stats['min_size'] = features['Min']
-        self.packet_stats['max_size'] = features['Max']
+        self.packet_stats['min_size'] = (features['Min'])
+        self.packet_stats['max_size'] = (features['Max'])
         
         # Calculate average
         if self.packet_stats['total_packets'] > 0:
