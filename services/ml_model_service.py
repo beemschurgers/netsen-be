@@ -45,7 +45,7 @@ class MLModelService:
         
         # Columns as per Merged_dropped.txt
         feature_columns = [
-            'Header_Length', 'Protocol Type', 'Time_To_Live', 'Rate',
+            'Protocol Type', 'Time_To_Live', 'Rate',
             'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
             'ack_flag_number', 'ece_flag_number', 'cwr_flag_number',
             'HTTP', 'HTTPS', 'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC',
@@ -58,7 +58,6 @@ class MLModelService:
         
         # Basic packet information
         features['Tot sum'] = self.packet_stats['total_size'] + len(packet)
-        features['Header_Length'] = len(packet) - len(packet.payload) if packet.payload else len(packet) #
         
         # Protocol type (convert to numeric)
         if packet.haslayer(IP):
@@ -167,7 +166,10 @@ class MLModelService:
             
             # Make prediction
             pred = self.frst_model.predict(features)[0]
-            label = self.frst_encoder.inverse_transform([int(pred)])[0]
+            if isinstance(pred, (int, float)):
+                label = self.frst_encoder.inverse_transform([int(pred)])[0]
+            else:
+                label = str(pred)
             
             # Get timestamp
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
