@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Packet Capture</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Live Packet Capture</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Protocol</th>
+                <th>Source</th>
+                <th>Destination</th>
+                <th>Length</th>
+            </tr>
+        </thead>
+        <tbody id="packets"></tbody>
+    </table>
+    <script>
+        const ws = new WebSocket("ws://localhost:8000/ws/packets");
+        ws.onmessage = function(event) {
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch {
+                // If not JSON, just show as error
+                data = { time: "", protocol: "", src: "", dst: "", length: event.data };
+            }
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${data.time}</td>
+                            <td>${data.protocol}</td>
+                            <td>${data.src}</td>
+                            <td>${data.dst}</td>
+                            <td>${data.length}</td>`;
+            document.getElementById("packets").appendChild(tr);
+        };
+    </script>
+</body>
+</html>
