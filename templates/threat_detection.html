@@ -183,12 +183,16 @@
         const threatIndicator = packetData.is_threat ? '⚠️ THREAT' : '✅ BENIGN';
         const threatType = packetData.threat_type || 'N/A';
 
+        // Enhanced packet display with real Scapy data
         packetDiv.innerHTML = `
             <strong>${timestamp}</strong> - ${threatIndicator}<br>
             Size: ${packetData.size} bytes | Protocol: ${packetData.protocol}<br>
-            ${packetData.src} ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
-            ${packetData.protocol_detail ? `Details: ${packetData.protocol_detail}<br>` : ''}
-            ${packetData.is_threat ? `Threat Type: ${threatType}` : ''}
+            ${packetData.src ? `Source: ${packetData.src}${packetData.src_port ? ':' + packetData.src_port : ''}` : ''}
+            ${packetData.dst ? ` → Destination: ${packetData.dst}${packetData.dst_port ? ':' + packetData.dst_port : ''}` : ''}<br>
+            ${packetData.flags && packetData.flags.length ? `TCP Flags: ${packetData.flags.join(', ')}<br>` : ''}
+            ${packetData.ttl ? `TTL: ${packetData.ttl} | ` : ''}${packetData.confidence ? `Confidence: ${packetData.confidence}%` : ''}<br>
+            ${packetData.application ? `Application: ${packetData.application} | ` : ''}
+            ${packetData.is_threat ? `Threat Type: ${threatType}` : 'Traffic appears normal'}
         `;
 
         logDiv.insertBefore(packetDiv, logDiv.firstChild);
