@@ -7,3 +7,9 @@ router = APIRouter()
 def get():
     html_content = open("templates/index.html").read()
     return HTMLResponse(content=html_content)
+
+@router.get("/threat-detection")
+def threat_detection():
+    with open("templates/threat_detection.html", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)

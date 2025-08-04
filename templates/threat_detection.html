@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Threat Detection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .packet {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .threat {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            border-left: 4px solid #ffc107;
+        }
+
+        .high-threat {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            border-left: 4px solid #dc3545;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .controls {
+            margin: 20px 0;
+        }
+
+        #packetLog {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Network Threat Detection</h1>
+
+    <div class="controls">
+        <button id="connectBtn" onclick="connectWebSocket()">Start Threat Detection</button>
+        <button id="disconnectBtn" onclick="disconnectWebSocket()" disabled>Stop Detection</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="status" class="status disconnected">
+        Disconnected
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <div class="stat-number" id="totalPackets">0</div>
+            <div class="stat-label">Total Packets</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="threatsDetected">0</div>
+            <div class="stat-label">Threats Detected</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="benignPackets">0</div>
+            <div class="stat-label">Benign Packets</div>
+        </div>
+    </div>
+
+    <h3>Real-time Packet Analysis</h3>
+    <div id="packetLog"></div>
+</div>
+
+<script>
+    let ws = null;
+    let isConnected = false;
+
+    function updateStatus(message, isConnected) {
+        const statusDiv = document.getElementById('status');
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${isConnected ? 'connected' : 'disconnected'}`;
+    }
+
+    function updateStats(stats) {
+        document.getElementById('totalPackets').textContent = stats.total_packets || 0;
+        document.getElementById('threatsDetected').textContent = stats.threats_detected || 0;
+        document.getElementById('benignPackets').textContent = stats.benign_packets || 0;
+    }
+
+    function addPacketToLog(packetData) {
+        const logDiv = document.getElementById('packetLog');
+        const packetDiv = document.createElement('div');
+        packetDiv.className = 'packet';
+
+        if (packetData.is_threat) {
+            packetDiv.classList.add('threat');
+            if (packetData.threat_type && packetData.threat_type !== 'BENIGN') {
+                packetDiv.classList.add('high-threat');
+            }
+        }
+
+        const timestamp = packetData.timestamp || new Date().toLocaleTimeString();
+        const threatIndicator = packetData.is_threat ? '⚠️ THREAT' : '✅ BENIGN';
+        const threatType = packetData.threat_type || 'N/A';
+
+        packetDiv.innerHTML = `
+            <strong>${timestamp}</strong> - ${threatIndicator}<br>
+            Size: ${packetData.size} bytes | Protocol: ${packetData.protocol}<br>
+            ${packetData.src} ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
+            ${packetData.protocol_detail ? `Details: ${packetData.protocol_detail}<br>` : ''}
+            ${packetData.is_threat ? `Threat Type: ${threatType}` : ''}
+        `;
+
+        logDiv.insertBefore(packetDiv, logDiv.firstChild);
+
+        // Keep only last 100 entries
+        const entries = logDiv.children;
+        if (entries.length > 100) {
+            logDiv.removeChild(entries[entries.length - 1]);
+        }
+    }
+
+    function connectWebSocket() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            return;
+        }
+
+        ws = new WebSocket('ws://localhost:8000/ws/threat-detection');
+
+        ws.onopen = function(event) {
+            isConnected = true;
+            updateStatus('Connected - Threat detection active', true);
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+        };
+
+        ws.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.error) {
+                    updateStatus(`Error: ${data.error}`, false);
+                    return;
+                }
+
+                if (data.status) {
+                    updateStatus(data.status, true);
+                    return;
+                }
+
+                // Handle packet data
+                if (data.timestamp) {
+                    addPacketToLog(data);
+
+                    // Update stats if available
+                    if (data.session_stats) {
+                        updateStats(data.session_stats);
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing message:', e);
+            }
+        };
+
+        ws.onclose = function(event) {
+            isConnected = false;
+            updateStatus('Disconnected', false);
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+        };
+
+        ws.onerror = function(error) {
+            updateStatus('Connection error', false);
+            console.error('WebSocket error:', error);
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (ws) {
+            ws.close();
+        }
+    }
+
+    function clearLog() {
+        document.getElementById('packetLog').innerHTML = '';
+    }
+
+    // Initialize
+    updateStatus('Ready to connect', false);
+</script>
+</body>
+</html>

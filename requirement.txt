@@ -2,3 +2,6 @@ fastapi
 uvicorn
 websocket
 scapy
+numpy
+pandas
+scikit-learn
