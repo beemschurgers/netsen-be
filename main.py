@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
+
 from routes.websocket_routes import router as ws_router
 from routes.html_routes import router as html_router
+from services.packet_capture import scan_devices
 
 app = FastAPI()
 

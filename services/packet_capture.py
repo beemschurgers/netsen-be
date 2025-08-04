@@ -1,6 +1,6 @@
 import threading
 import asyncio
-from scapy.all import sniff, IP
+from scapy.all import sniff, IP, ARP, Ether, srp
 
 async def start_packet_capture(websocket):
     await websocket.accept()
@@ -35,3 +35,21 @@ async def start_packet_capture(websocket):
     finally:
         stop_event.set()
         thread.join()
+
+
+def scan_devices(ip_range="192.168.2.2"):
+    devices = []
+
+    arp = ARP(pdst=ip_range)
+    ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+    packet = ether / arp
+
+    result = srp(packet, timeout=2, verbose=0)[0]
+
+    for sent, received in result:
+        devices.append({
+            "ip": received.psrc,
+            "mac": received.hwsrc
+        })
+
+    return devices
