@@ -3,6 +3,8 @@ from services.packet_capture import start_packet_capture
 from services.threats_ws import threats_websocket
 from services.top_talkers_ws import top_talkers_websocket
 from services.devices_ws import device_ws
+from services.threat_detection_ws import threat_detection_websocket as threat_detection_handler
+
 router = APIRouter()
 
 @router.websocket("/ws/packets")
@@ -24,5 +26,8 @@ async def devices_endpoint(websocket: WebSocket):
 async def websocket_threats(websocket: WebSocket):
     await threats_websocket(websocket)
 
+@router.websocket("/ws/threat-detection")
+async def threat_detection_websocket(websocket: WebSocket):
+    await threat_detection_handler(websocket)
 
 

@@ -1,2 +1,2 @@
-:: Start the FastAPI backend with admin privileges
-powershell -Command "Start-Process cmd -ArgumentList '/k cd /d %CD% && uvicorn main:app --reload' -Verb RunAs"
+:: Start the FastAPI backend with admin privileges and conda environment
+powershell -Command "Start-Process cmd -ArgumentList '/k cd /d %CD% && conda activate tf && uvicorn main:app --reload' -Verb RunAs"

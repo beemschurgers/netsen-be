@@ -186,7 +186,7 @@
         packetDiv.innerHTML = `
             <strong>${timestamp}</strong> - ${threatIndicator}<br>
             Size: ${packetData.size} bytes | Protocol: ${packetData.protocol}<br>
-            ${packetData.src} ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
+            ${packetData.src ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
             ${packetData.protocol_detail ? `Details: ${packetData.protocol_detail}<br>` : ''}
             ${packetData.is_threat ? `Threat Type: ${threatType}` : ''}
         `;

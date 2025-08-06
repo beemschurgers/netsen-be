@@ -11,14 +11,18 @@ async def start_packet_capture(websocket):
         def packet_callback(packet):
             if stop_event.is_set():
                 return True
-            summary = {
-                "time": str(packet.time),
-                "protocol": packet.name,
-                "src": packet[IP].src if IP in packet else "",
-                "dst": packet[IP].dst if IP in packet else "",
-                "length": len(packet)
-            }
-            asyncio.run_coroutine_threadsafe(websocket.send_json(summary), loop)
+            try:
+                summary = {
+                    "time": str(packet.time),
+                    "protocol": packet.name,
+                    "src": packet[IP].src if IP in packet else "",
+                    "dst": packet[IP].dst if IP in packet else "",
+                    "length": len(packet)
+                }
+                asyncio.run_coroutine_threadsafe(websocket.send_json(summary), loop)
+            except Exception as e:
+                # Skip packets that can't be processed
+                pass
         try:
             sniff(prn=packet_callback, store=0, stop_filter=lambda x: stop_event.is_set())
         except Exception as e:
