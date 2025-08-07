@@ -13,6 +13,7 @@ import queue
 class MLModelService:
     def __init__(self, interface=None, batch_size=10, capture_duration=None):
         self.frst_model = None
+        self.threat_detection_model = None  # New model for threat detection
         self.is_initialized = False
         
         # Capture settings
@@ -29,6 +30,15 @@ class MLModelService:
             "HTTP", "HTTPS", "DNS", "Telnet", "SMTP", "SSH", "IRC", 
             "TCP", "UDP", "DHCP", "ARP", "ICMP", "IGMP", "IPv", "LLC",
             "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "IAT", "Number", "Variance"
+        ]
+        
+        # Columns for threat detection model (removing specified features)
+        self.threat_detection_columns = [
+            "Header_Length", "Protocol Type", "Time_To_Live", "Rate",
+            "ack_count",
+            "HTTP", "HTTPS", "DNS", 
+            "TCP", "UDP", "DHCP", "ICMP", "IPv",
+            "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "Variance"
         ]
         
         # Flow tracking (essential for the system architecture)
@@ -61,19 +71,66 @@ class MLModelService:
         self.packet_sizes = deque(maxlen=1000)  # Keep last 1000 packet sizes for stats
 
     def load_model(self):
-        """Load the ML model"""
+        """Load the ML models"""
         try:
-            model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'random_forest_model.pkl')
+            # Load threat detection model
+            threat_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'threat_detection_model.pkl')
+            if os.path.exists(threat_model_path):
+                with open(threat_model_path, 'rb') as f:
+                    self.threat_detection_model = pickle.load(f)
+                print("Threat Detection Model loaded successfully!")
+            else:
+                print("Warning: Threat detection model not found at", threat_model_path)
+                return False
 
+            # Load main classification model
+            model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'random_forest_model.pkl')
             with open(model_path, 'rb') as f:
                 self.frst_model = pickle.load(f)
+            print("Main Classification Model loaded successfully!")
 
             self.is_initialized = True
-            print("ML Model loaded successfully!")
+            print("All ML Models loaded successfully!")
             return True
         except Exception as e:
-            print(f"Error loading ML model: {e}")
+            print(f"Error loading ML models: {e}")
             return False
+
+    def create_features_dataframe(self, features_dict):
+        """Create a DataFrame from features dictionary using self.columns"""
+        # Create a DataFrame with the correct column order
+        df = pd.DataFrame([features_dict], columns=self.columns)
+        return df
+
+    def create_threat_detection_features(self, features_dict):
+        """Create feature vector for threat detection model (with reduced features)"""
+        feature_vector = []
+        for col in self.threat_detection_columns:
+            if col in features_dict:
+                feature_vector.append(features_dict[col])
+            else:
+                feature_vector.append(0)  # Default value for missing columns
+        return np.array(feature_vector, dtype='float32').reshape(1, -1)
+
+    def get_feature_differences(self):
+        """Show the differences between main model and threat detection model features"""
+        main_features = set(self.columns)
+        threat_features = set(self.threat_detection_columns)
+        
+        removed_features = main_features - threat_features
+        common_features = main_features & threat_features
+        
+        print(f"Main model features: {len(self.columns)}")
+        print(f"Threat detection model features: {len(self.threat_detection_columns)}")
+        print(f"Common features: {len(common_features)}")
+        print(f"Removed features: {len(removed_features)}")
+        print("Removed features:", sorted(list(removed_features)))
+        
+        return {
+            'main_features': len(self.columns),
+            'threat_features': len(self.threat_detection_columns),
+            'removed_features': sorted(list(removed_features))
+        }
 
     def get_protocol_name(self, protocol_val):
         """Convert protocol number to name"""
@@ -296,9 +353,9 @@ class MLModelService:
             return None
 
     def process_packet_with_ml(self, packet):
-        """Process each captured packet and make prediction"""
+        """Process each captured packet and make prediction using two-stage approach"""
         if not self.is_initialized:
-            print("ML model not initialized")
+            print("ML models not initialized")
             return None
 
         try:
@@ -308,20 +365,29 @@ class MLModelService:
                 print("Failed to extract features from packet")
                 return None
 
-            # Create feature vector for ML model
-            feature_vector = []
-            for col in self.columns:
-                if col in features:
-                    feature_vector.append(features[col])
-                else:
-                    feature_vector.append(0)  # Default value for missing columns
+            # Stage 1: Threat Detection Model
+            threat_features = self.create_threat_detection_features(features)
+            threat_pred = self.threat_detection_model.predict(threat_features)[0]
+            is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
 
-            # Reshape for model input
-            features_array = np.array(feature_vector, dtype='float32').reshape(1, -1)
+            # Stage 2: Main Classification Model (only if threat detected)
+            if is_threat:
+                # Create feature vector for main ML model
+                feature_vector = []
+                for col in self.columns:
+                    if col in features:
+                        feature_vector.append(features[col])
+                    else:
+                        feature_vector.append(0)  # Default value for missing columns
 
-            # Make prediction
-            pred = self.frst_model.predict(features_array)[0]
-            label = str(pred)
+                # Reshape for model input
+                features_array = np.array(feature_vector, dtype='float32').reshape(1, -1)
+
+                # Make prediction with main model
+                pred = self.frst_model.predict(features_array)[0]
+                label = str(pred)
+            else:
+                label = 'BENIGN'
 
             # Get timestamp
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -332,8 +398,8 @@ class MLModelService:
                 "size": len(packet),
                 "protocol": packet.name,
                 "predicted_label": label,
-                "is_threat": label != 'BENIGN',
-                "threat_type": label if label != 'BENIGN' else None
+                "is_threat": is_threat,
+                "threat_type": label if is_threat else None
             }
 
             # Add IP layer info if available
@@ -398,7 +464,7 @@ class MLModelService:
             self.process_batch_with_ml(batch_data)
 
     def process_batch_with_ml(self, batch_data):
-        """Process a batch of features and make prediction"""
+        """Process a batch of features and make prediction using two-stage approach"""
         if not self.is_initialized:
             return None
 
@@ -451,20 +517,29 @@ class MLModelService:
                     'Variance': df['Tot size'].var()
                 }
                 
-                # Convert to feature vector for ML model
-                feature_vector = []
-                for col in self.columns:
-                    if col in aggregated:
-                        feature_vector.append(aggregated[col])
-                    else:
-                        feature_vector.append(0)  # Default value for missing columns
+                # Stage 1: Threat Detection Model
+                threat_features = self.create_threat_detection_features(aggregated)
+                threat_pred = self.threat_detection_model.predict(threat_features)[0]
+                is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
                 
-                # Reshape for model input
-                features = np.array(feature_vector, dtype='float32').reshape(1, -1)
-                
-                # Make prediction
-                pred = self.frst_model.predict(features)[0]
-                label = str(pred)
+                # Stage 2: Main Classification Model (only if threat detected)
+                if is_threat:
+                    # Convert to feature vector for main ML model
+                    feature_vector = []
+                    for col in self.columns:
+                        if col in aggregated:
+                            feature_vector.append(aggregated[col])
+                        else:
+                            feature_vector.append(0)  # Default value for missing columns
+                    
+                    # Reshape for model input
+                    features = np.array(feature_vector, dtype='float32').reshape(1, -1)
+                    
+                    # Make prediction with main model
+                    pred = self.frst_model.predict(features)[0]
+                    label = str(pred)
+                else:
+                    label = 'BENIGN'
                 
                 # Get timestamp
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -475,8 +550,8 @@ class MLModelService:
                     "packet_count": len(df),
                     "total_bytes": aggregated['Tot size'],
                     "predicted_label": label,
-                    "is_threat": label != 'BENIGN',
-                    "threat_type": label if label != 'BENIGN' else None
+                    "is_threat": is_threat,
+                    "threat_type": label if is_threat else None
                 }
                 
                 # Print threat detection
