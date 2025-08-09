@@ -12,8 +12,9 @@ import queue
 
 class MLModelService:
     def __init__(self, interface=None, batch_size=10, capture_duration=None):
+        # ML Models
         self.frst_model = None
-        self.threat_detection_model = None  # New model for threat detection
+        self.threat_detection_model = None
         self.is_initialized = False
         
         # Capture settings
@@ -21,7 +22,7 @@ class MLModelService:
         self.batch_size = batch_size
         self.capture_duration = capture_duration
         
-        # Feature columns for ML model
+        # Feature columns for ML models
         self.columns = [
             "Header_Length", "Protocol Type", "Time_To_Live", "Rate",
             "fin_flag_number", "syn_flag_number", "rst_flag_number",
@@ -35,13 +36,11 @@ class MLModelService:
         # Columns for threat detection model (removing specified features)
         self.threat_detection_columns = [
             "Header_Length", "Protocol Type", "Time_To_Live", "Rate",
-            "ack_count",
-            "HTTP", "HTTPS", "DNS", 
-            "TCP", "UDP", "DHCP", "ICMP", "IPv",
+            "ack_count", "HTTP", "HTTPS", "DNS", "TCP", "UDP", "DHCP", "ICMP", "IPv",
             "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "Variance"
         ]
         
-        # Flow tracking (essential for the system architecture)
+        # Flow tracking
         self.tcpflows = defaultdict(list)
         self.udpflows = defaultdict(list)
         
@@ -50,25 +49,20 @@ class MLModelService:
         self.dst_packet_count = defaultdict(int)
         self.src_ip_byte = defaultdict(int)
         self.dst_ip_byte = defaultdict(int)
+        self.packet_sizes = deque(maxlen=1000)
         
-        # Protocol counters for window
-        self.window_protocols = defaultdict(int)
-        self.window_flags = defaultdict(int)
-        
-        # Timing
+        # Timing and control
         self.last_packet_time = 0
         self.start_time = time.time()
-        
-        # Batch processing
-        self.packet_queue = queue.Queue()
-        self.batch_data = []
-        
-        # Control flags
         self.running = False
         self.packet_count = 0
         
-        # Statistics
-        self.packet_sizes = deque(maxlen=1000)  # Keep last 1000 packet sizes for stats
+        # Batch processing
+        self.packet_queue = queue.Queue()
+        
+        # Recent results storage for WebSocket access
+        self.recent_results = []
+        self.max_recent_results = 100  # Keep last 100 results
 
     def load_model(self):
         """Load the ML models"""
@@ -78,16 +72,13 @@ class MLModelService:
             if os.path.exists(threat_model_path):
                 with open(threat_model_path, 'rb') as f:
                     self.threat_detection_model = pickle.load(f)
-                print("Threat Detection Model loaded successfully!")
             else:
-                print("Warning: Threat detection model not found at", threat_model_path)
                 return False
 
             # Load main classification model
             model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'random_forest_model.pkl')
             with open(model_path, 'rb') as f:
                 self.frst_model = pickle.load(f)
-            print("Main Classification Model loaded successfully!")
 
             self.is_initialized = True
             print("All ML Models loaded successfully!")
@@ -95,53 +86,6 @@ class MLModelService:
         except Exception as e:
             print(f"Error loading ML models: {e}")
             return False
-
-    def create_features_dataframe(self, features_dict):
-        """Create a DataFrame from features dictionary using self.columns"""
-        # Create a DataFrame with the correct column order
-        df = pd.DataFrame([features_dict], columns=self.columns)
-        return df
-
-    def create_threat_detection_features(self, features_dict):
-        """Create feature vector for threat detection model (with reduced features)"""
-        feature_vector = []
-        for col in self.threat_detection_columns:
-            if col in features_dict:
-                feature_vector.append(features_dict[col])
-            else:
-                feature_vector.append(0)  # Default value for missing columns
-        return np.array(feature_vector, dtype='float32').reshape(1, -1)
-
-    def get_feature_differences(self):
-        """Show the differences between main model and threat detection model features"""
-        main_features = set(self.columns)
-        threat_features = set(self.threat_detection_columns)
-        
-        removed_features = main_features - threat_features
-        common_features = main_features & threat_features
-        
-        print(f"Main model features: {len(self.columns)}")
-        print(f"Threat detection model features: {len(self.threat_detection_columns)}")
-        print(f"Common features: {len(common_features)}")
-        print(f"Removed features: {len(removed_features)}")
-        print("Removed features:", sorted(list(removed_features)))
-        
-        return {
-            'main_features': len(self.columns),
-            'threat_features': len(self.threat_detection_columns),
-            'removed_features': sorted(list(removed_features))
-        }
-
-    def get_protocol_name(self, protocol_val):
-        """Convert protocol number to name"""
-        protocol_map = {
-            0: "IP",
-            6: "TCP", 
-            17: "UDP",
-            2: "IGMP",
-            1: "ICMP"
-        }
-        return protocol_map.get(protocol_val, "Unknown")
 
     def extract_tcp_flags(self, tcp_packet):
         """Extract TCP flags as binary values"""
@@ -191,36 +135,6 @@ class MLModelService:
         """Create consistent flow key (bidirectional)"""
         flow = sorted([(src_ip, src_port), (dst_ip, dst_port)])
         return (flow[0], flow[1])
-
-    def calculate_flow_stats(self, flows, flow_key):
-        """Calculate flow statistics"""
-        if not flows.get(flow_key):
-            return 0, 0, 0, 0, 0, 0, 0, 0, 0
-            
-        packets = flows[flow_key]
-        if not packets:
-            return 0, 0, 0, 0, 0, 0, 0, 0, 0
-            
-        # Calculate statistics
-        total_bytes = sum(p['byte_count'] for p in packets)
-        timestamps = [p['ts'] for p in packets]
-        
-        if len(timestamps) > 1:
-            duration = max(timestamps) - min(timestamps)
-            idle_time = timestamps[-1] - timestamps[-2] if len(timestamps) > 1 else 0
-        else:
-            duration = 0
-            idle_time = 0
-            
-        max_duration = max(timestamps) if timestamps else 0
-        min_duration = min(timestamps) if timestamps else 0
-        sum_duration = sum(timestamps)
-        avg_duration = sum_duration / len(timestamps) if timestamps else 0
-        std_duration = np.std(timestamps) if len(timestamps) > 1 else 0
-        active_time = duration
-        
-        return (total_bytes, duration, max_duration, min_duration, 
-                sum_duration, avg_duration, std_duration, idle_time, active_time)
 
     def process_packet(self, packet):
         """Process a single packet and extract features"""
@@ -294,6 +208,7 @@ class MLModelService:
                     
                     # Flow tracking
                     flow_key = self.get_flow_key(src_ip, tcp_layer.sport, dst_ip, tcp_layer.dport)
+                    features['flow_key'] = str(flow_key)
                     flow_data = {
                         'byte_count': packet_size,
                         'header_len': features['Header_Length'],
@@ -313,6 +228,7 @@ class MLModelService:
                     
                     # Flow tracking
                     flow_key = self.get_flow_key(src_ip, udp_layer.sport, dst_ip, udp_layer.dport)
+                    features['flow_key'] = str(flow_key)
                     flow_data = {
                         'byte_count': packet_size,
                         'header_len': features['Header_Length'],
@@ -352,77 +268,6 @@ class MLModelService:
             print(f"Error processing packet: {e}")
             return None
 
-    def process_packet_with_ml(self, packet):
-        """Process each captured packet and make prediction using two-stage approach"""
-        if not self.is_initialized:
-            print("ML models not initialized")
-            return None
-
-        try:
-            # Extract features using the existing process_packet method
-            features = self.process_packet(packet)
-            if features is None:
-                print("Failed to extract features from packet")
-                return None
-
-            # Stage 1: Threat Detection Model
-            threat_features = self.create_threat_detection_features(features)
-            threat_pred = self.threat_detection_model.predict(threat_features)[0]
-            is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
-
-            # Stage 2: Main Classification Model (only if threat detected)
-            if is_threat:
-                # Create feature vector for main ML model
-                feature_vector = []
-                for col in self.columns:
-                    if col in features:
-                        feature_vector.append(features[col])
-                    else:
-                        feature_vector.append(0)  # Default value for missing columns
-
-                # Reshape for model input
-                features_array = np.array(feature_vector, dtype='float32').reshape(1, -1)
-
-                # Make prediction with main model
-                pred = self.frst_model.predict(features_array)[0]
-                label = str(pred)
-            else:
-                label = 'BENIGN'
-
-            # Get timestamp
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Prepare packet info
-            packet_info = {
-                "timestamp": timestamp,
-                "size": len(packet),
-                "protocol": packet.name,
-                "predicted_label": label,
-                "is_threat": is_threat,
-                "threat_type": label if is_threat else None
-            }
-
-            # Add IP layer info if available
-            if IP in packet:
-                packet_info["src"] = packet[IP].src
-                packet_info["dst"] = packet[IP].dst
-                if TCP in packet:
-                    packet_info["protocol_detail"] = f"TCP ({packet[TCP].sport} -> {packet[TCP].dport})"
-                elif UDP in packet:
-                    packet_info["protocol_detail"] = f"UDP ({packet[UDP].sport} -> {packet[UDP].dport})"
-                elif ICMP in packet:
-                    packet_info["protocol_detail"] = "ICMP"
-            else:
-                packet_info["src"] = ""
-                packet_info["dst"] = ""
-                packet_info["protocol_detail"] = packet.name
-
-            return packet_info
-
-        except Exception as e:
-            print(f"Error processing packet with ML: {e}")
-            return None
-
     def packet_handler(self, packet):
         """Callback function for each captured packet"""
         if not self.running:
@@ -435,33 +280,33 @@ class MLModelService:
         if features:
             self.packet_queue.put(features)
             
-        # Print progress
-        if self.packet_count % 100 == 0:
-            print(f"Captured {self.packet_count} packets...")
 
     def batch_processor(self):
-        """Process packets in batches and make predictions"""
-        batch_data = []
-        
+        """Process packets in per-flow batches and make predictions"""
+        flow_batches = {}
+
         while self.running:
             try:
-                # Get packet with timeout
                 features = self.packet_queue.get(timeout=1)
-                batch_data.append(features)
-                
-                # Process batch when full
-                if len(batch_data) >= self.batch_size:
-                    self.process_batch_with_ml(batch_data)
-                    batch_data = []
-                    
+                flow_key = features.get('flow_key', 'NO_FLOW')
+
+                if flow_key not in flow_batches:
+                    flow_batches[flow_key] = []
+
+                flow_batches[flow_key].append(features)
+
+                if len(flow_batches[flow_key]) >= self.batch_size:
+                    self.process_batch_with_ml(flow_batches[flow_key])
+                    flow_batches[flow_key] = []
+
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Error in batch processor: {e}")
-        
-        # Process remaining packets
-        if batch_data:
-            self.process_batch_with_ml(batch_data)
+
+        for batch in flow_batches.values():
+            if batch:
+                self.process_batch_with_ml(batch)
 
     def process_batch_with_ml(self, batch_data):
         """Process a batch of features and make prediction using two-stage approach"""
@@ -517,26 +362,19 @@ class MLModelService:
                     'Variance': df['Tot size'].var()
                 }
                 
-                # Stage 1: Threat Detection Model
-                threat_features = self.create_threat_detection_features(aggregated)
-                threat_pred = self.threat_detection_model.predict(threat_features)[0]
+                # Build a single full DataFrame aligned to main model columns
+                full_df = pd.DataFrame([aggregated], columns=self.columns).fillna(0)
+
+                # Stage 1: Threat Detection Model using reduced column view
+                threat_df = full_df.reindex(columns=self.threat_detection_columns, fill_value=0)
+                threat_pred = self.threat_detection_model.predict(threat_df.to_numpy())[0]
                 is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
-                
+
                 # Stage 2: Main Classification Model (only if threat detected)
+                main_df = None
                 if is_threat:
-                    # Convert to feature vector for main ML model
-                    feature_vector = []
-                    for col in self.columns:
-                        if col in aggregated:
-                            feature_vector.append(aggregated[col])
-                        else:
-                            feature_vector.append(0)  # Default value for missing columns
-                    
-                    # Reshape for model input
-                    features = np.array(feature_vector, dtype='float32').reshape(1, -1)
-                    
-                    # Make prediction with main model
-                    pred = self.frst_model.predict(features)[0]
+                    main_df = full_df
+                    pred = self.frst_model.predict(full_df.to_numpy())[0]
                     label = str(pred)
                 else:
                     label = 'BENIGN'
@@ -545,23 +383,29 @@ class MLModelService:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 # Prepare batch info
+                flow_key_value = None
+                if 'flow_key' in df.columns:
+                    try:
+                        flow_key_value = df['flow_key'].mode().iloc[0]
+                    except Exception:
+                        flow_key_value = df['flow_key'].iloc[0]
+
                 batch_info = {
                     "timestamp": timestamp,
+                    "flow_key": flow_key_value,
                     "packet_count": len(df),
                     "total_bytes": aggregated['Tot size'],
                     "predicted_label": label,
                     "is_threat": is_threat,
-                    "threat_type": label if is_threat else None
+                    "threat_type": label if is_threat else None,
+                    "threat_dataframe": threat_df.to_dict('records')[0] if is_threat else None,
+                    "main_dataframe": main_df.to_dict('records')[0] if main_df is not None else None
                 }
                 
-                # Print threat detection
-                if batch_info["is_threat"]:
-                    print(f"🚨 THREAT DETECTED: {batch_info['threat_type']}")
-                    print(f"   Packets: {batch_info['packet_count']}, Bytes: {batch_info['total_bytes']}")
-                    print(f"   Time: {batch_info['timestamp']}")
-                    print("-" * 50)
-                
-                print(f"Processed batch of {len(df)} packets - Prediction: {label}")
+                # Store recent result for WebSocket access
+                self.recent_results.append(batch_info)
+                if len(self.recent_results) > self.max_recent_results:
+                    self.recent_results.pop(0)  # Remove oldest result
                 
                 return batch_info
                 
@@ -598,6 +442,10 @@ class MLModelService:
             print(f"Capture stopped. Total packets captured: {self.packet_count}")
             print(f"TCP flows tracked: {len(self.tcpflows)}")
             print(f"UDP flows tracked: {len(self.udpflows)}")
+
+    def get_recent_results(self, limit=10):
+        """Get recent threat detection results for WebSocket access"""
+        return self.recent_results[-limit:] if self.recent_results else []
 
 
 # Global instance

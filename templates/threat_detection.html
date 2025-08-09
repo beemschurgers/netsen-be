@@ -185,6 +185,7 @@
 
         packetDiv.innerHTML = `
             <strong>${timestamp}</strong> - ${threatIndicator}<br>
+            ${packetData.flow_key ? `Flow: ${packetData.flow_key}<br>` : ''}
             Size: ${packetData.size} bytes | Protocol: ${packetData.protocol}<br>
             ${packetData.src ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
             ${packetData.protocol_detail ? `Details: ${packetData.protocol_detail}<br>` : ''}
@@ -225,6 +226,9 @@
 
                 if (data.status) {
                     updateStatus(data.status, true);
+                    if (data.session_stats) {
+                        updateStats(data.session_stats);
+                    }
                     return;
                 }
 
