@@ -36,14 +36,16 @@ async def threat_detection_websocket(websocket: WebSocket):
     stop_event = threading.Event()
     loop = asyncio.get_running_loop()
 
-    # Per-connection session statistics
+    # Per-connection session statistics (flow-based)
     session_stats = {
-        "total_packets": 0,
-        "threats_detected": 0,
-        "benign_packets": 0,
+        "total_flows": 0,
+        "threat_flows": 0,
+        "benign_flows": 0,
+        "total_packets": 0,   # aggregated from flow batches
+        "total_bytes": 0,     # aggregated from flow batches
         "threat_types": {},
-        "stage1_predictions": 0,
-        "stage2_predictions": 0,
+        "stage1_predictions": 0,  # number of stage1 decisions made (equals total_flows)
+        "stage2_predictions": 0,  # number of stage2 classifications performed (threat flows)
     }
 
     def monitor_ml_service(loop_ref: asyncio.AbstractEventLoop) -> None:
@@ -51,18 +53,11 @@ async def threat_detection_websocket(websocket: WebSocket):
         def send(payload):
             asyncio.run_coroutine_threadsafe(websocket.send_json(payload), loop_ref)
 
-        last_packet_count = ml_service.packet_count
         last_result_count = len(ml_service.recent_results) if hasattr(ml_service, "recent_results") else 0
 
         while not stop_event.is_set():
             try:
-                current_packet_count = ml_service.packet_count
                 current_result_count = len(ml_service.recent_results) if hasattr(ml_service, "recent_results") else 0
-
-                # Packet count delta
-                if current_packet_count > last_packet_count:
-                    session_stats["total_packets"] += (current_packet_count - last_packet_count)
-                    last_packet_count = current_packet_count
 
                 # New results
                 if current_result_count > last_result_count and hasattr(ml_service, "get_recent_results"):
@@ -74,19 +69,21 @@ async def threat_detection_websocket(websocket: WebSocket):
                         new_results = []
 
                     for result in new_results:
+                        # Update flow-based session statistics
+                        session_stats["total_flows"] += 1
+                        session_stats["stage1_predictions"] += 1
+                        session_stats["total_packets"] += int(result.get("packet_count", 0))
+                        session_stats["total_bytes"] += int(result.get("total_bytes", 0))
+
                         if result.get("is_threat"):
-                            session_stats["threats_detected"] += 1
-                            session_stats["stage1_predictions"] += 1
+                            session_stats["threat_flows"] += 1
                             threat_type = result.get("threat_type")
                             if threat_type:
                                 session_stats["threat_types"][threat_type] = session_stats["threat_types"].get(threat_type, 0) + 1
-                            if result.get("main_dataframe"):
+                            if result.get("main_dataframe") is not None:
                                 session_stats["stage2_predictions"] += 1
-                                print(f"🔍 STAGE 2 - CLASSIFICATION: {threat_type} -> {result.get('predicted_label')}")
                         else:
-                            session_stats["benign_packets"] += 1
-                            session_stats["stage1_predictions"] += 1
-                            print("✅ STAGE 1 - BENIGN DETECTED")
+                            session_stats["benign_flows"] += 1
 
                         enhanced_result = {
                             "timestamp": result.get("timestamp"),
@@ -96,23 +93,8 @@ async def threat_detection_websocket(websocket: WebSocket):
                             "predicted_label": result.get("predicted_label"),
                             "is_threat": result.get("is_threat"),
                             "threat_type": result.get("threat_type"),
-                            # Frontend-compatible fields
-                            "size": result.get("total_bytes", 0),
-                            "protocol": "TCP/UDP" if result.get("is_threat") else "BENIGN",
-                            "src": "Unknown",
-                            "dst": "Unknown",
-                            "protocol_detail": (
-                                f"Threat: {result.get('threat_type')}" if result.get("is_threat") else "Benign traffic"
-                            ),
-                            "stage1_result": {
-                                "threat_detected": result.get("is_threat"),
-                                "threat_dataframe": result.get("threat_dataframe"),
-                            },
-                            "stage2_result": {
-                                "classification_performed": result.get("is_threat"),
-                                "main_dataframe": result.get("main_dataframe"),
-                                "final_label": result.get("predicted_label"),
-                            },
+                            "threat_dataframe": result.get("threat_dataframe"),
+                            "main_dataframe": result.get("main_dataframe"),
                             "session_stats": session_stats.copy(),
                             "processing_stages": {
                                 "stage1_completed": True,
@@ -129,7 +111,6 @@ async def threat_detection_websocket(websocket: WebSocket):
                 if int(time.time()) % 5 == 0:
                     status_update = {
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "packet_count": current_packet_count,
                         "session_stats": session_stats.copy(),
                         "status": "monitoring",
                         "two_stage_info": {
@@ -155,9 +136,9 @@ async def threat_detection_websocket(websocket: WebSocket):
     # Initial status
     await websocket.send_json(
         {
-            "status": "Connected - Two-stage threat detection active",
+            "status": "Connected - Two-stage flow-based threat detection active",
             "model_loaded": ml_service.is_initialized,
-            "message": "Real-time ML-based threat detection with two-stage approach is now active",
+            "message": "Real-time ML-based threat detection with two-stage flow-based approach is now active",
             "session_stats": session_stats,
             "batch_size": ml_service.batch_size,
             "two_stage_approach": {
