@@ -410,11 +410,6 @@ class MLModelService:
             return None
 
     def start_capture(self):
-        """Start live packet capture with flow tracking"""
-        print(f"Starting live capture on interface: {self.interface or 'default'}")
-        print(f"Batch size: {self.batch_size}")
-        print("Press Ctrl+C to stop capture")
-        
         # Start batch processor thread
         self.running = True
         batch_thread = threading.Thread(target=self.batch_processor)
@@ -435,12 +430,8 @@ class MLModelService:
             print("\nStopping capture...")
         finally:
             self.running = False
-            print(f"Capture stopped. Total packets captured: {self.packet_count}")
-            print(f"TCP flows tracked: {len(self.tcpflows)}")
-            print(f"UDP flows tracked: {len(self.udpflows)}")
 
     def get_recent_results(self, limit=10):
-        """Get recent threat detection results for WebSocket access"""
         return self.recent_results[-limit:] if self.recent_results else []
 
 
