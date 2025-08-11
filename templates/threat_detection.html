@@ -183,9 +183,13 @@
         const threatIndicator = packetData.is_threat ? '⚠️ THREAT' : '✅ BENIGN';
         const threatType = packetData.threat_type || 'N/A';
 
+        const flowLine = (packetData.endpoints && packetData.endpoints.length === 2)
+            ? `Flow: ${packetData.endpoints[0].ip}:${packetData.endpoints[0].port} ↔ ${packetData.endpoints[1].ip}:${packetData.endpoints[1].port}<br>`
+            : (packetData.flow_key ? `Flow: ${packetData.flow_key}<br>` : '');
+
         packetDiv.innerHTML = `
             <strong>${timestamp}</strong> - ${threatIndicator}<br>
-            ${packetData.flow_key ? `Flow: ${packetData.flow_key}<br>` : ''}
+            ${flowLine}
             Packets: ${packetData.packet_count || 0} | Bytes: ${packetData.total_bytes || 0}<br>
             ${packetData.is_threat ? `Threat Type: ${threatType}` : 'Label: BENIGN'}
         `;

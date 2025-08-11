@@ -1,9 +1,14 @@
 import threading
 import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from services.ml_model_service import ml_service
 from datetime import datetime
 import time
+import ast
+import json
+import math
+import numpy as np
 
 
 async def threat_detection_websocket(websocket: WebSocket):
@@ -48,10 +53,41 @@ async def threat_detection_websocket(websocket: WebSocket):
         "stage2_predictions": 0,  # number of stage2 classifications performed (threat flows)
     }
 
+    def to_jsonable(value):
+        """Recursively convert numpy/pandas scalars, arrays, NaN/Inf to JSON-safe Python types."""
+        # Numpy scalar
+        if isinstance(value, np.generic):
+            return value.item()
+        # Numpy array
+        if isinstance(value, np.ndarray):
+            return [to_jsonable(v) for v in value.tolist()]
+        # Basic containers
+        if isinstance(value, dict):
+            return {str(k): to_jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [to_jsonable(v) for v in value]
+        # Floats: sanitize NaN/Inf
+        if isinstance(value, float):
+            if math.isfinite(value):
+                return value
+            return None
+        return value
+
     def monitor_ml_service(loop_ref: asyncio.AbstractEventLoop) -> None:
         """Monitor ml_service.recent_results and forward new items to the client."""
         def send(payload):
-            asyncio.run_coroutine_threadsafe(websocket.send_json(payload), loop_ref)
+            # Convert aggressively to builtin types to avoid numpy serialization issues
+            safe_payload = to_jsonable(payload)
+            try:
+                text = json.dumps(safe_payload, ensure_ascii=False, allow_nan=False)
+            except Exception as enc_err:
+                print(f"Encoding error, dumping simplified payload: {enc_err}")
+                try:
+                    text = json.dumps(jsonable_encoder(safe_payload), ensure_ascii=False)
+                except Exception as enc_err2:
+                    print(f"Fallback encoding also failed: {enc_err2}")
+                    return
+            asyncio.run_coroutine_threadsafe(websocket.send_text(text), loop_ref)
 
         last_result_count = len(ml_service.recent_results) if hasattr(ml_service, "recent_results") else 0
 
@@ -62,7 +98,7 @@ async def threat_detection_websocket(websocket: WebSocket):
                 # New results
                 if current_result_count > last_result_count and hasattr(ml_service, "get_recent_results"):
                     try:
-                        delta = current_result_count - last_result_count
+                        delta = int(current_result_count - last_result_count)
                         new_results = ml_service.get_recent_results(delta)
                     except Exception as e:
                         print(f"Error getting recent results: {e}")
@@ -85,6 +121,25 @@ async def threat_detection_websocket(websocket: WebSocket):
                         else:
                             session_stats["benign_flows"] += 1
 
+                        # Derive bidirectional endpoints from flow_key when available
+                        flow_key_str = result.get("flow_key")
+                        endpoints = None
+                        if isinstance(flow_key_str, str):
+                            try:
+                                parsed = ast.literal_eval(flow_key_str)
+                                # Expected format: ((ip1, port1), (ip2, port2))
+                                if (
+                                    isinstance(parsed, (list, tuple)) and len(parsed) == 2 and
+                                    isinstance(parsed[0], (list, tuple)) and len(parsed[0]) == 2 and
+                                    isinstance(parsed[1], (list, tuple)) and len(parsed[1]) == 2
+                                ):
+                                    endpoints = [
+                                        {"ip": str(parsed[0][0]), "port": int(parsed[0][1])},
+                                        {"ip": str(parsed[1][0]), "port": int(parsed[1][1])},
+                                    ]
+                            except Exception:
+                                endpoints = None
+
                         enhanced_result = {
                             "timestamp": result.get("timestamp"),
                             "flow_key": result.get("flow_key"),
@@ -95,6 +150,7 @@ async def threat_detection_websocket(websocket: WebSocket):
                             "threat_type": result.get("threat_type"),
                             "threat_dataframe": result.get("threat_dataframe"),
                             "main_dataframe": result.get("main_dataframe"),
+                            "endpoints": endpoints,
                             "session_stats": session_stats.copy(),
                             "processing_stages": {
                                 "stage1_completed": True,
