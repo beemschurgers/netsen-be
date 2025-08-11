@@ -33,13 +33,6 @@ class MLModelService:
             "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "IAT", "Number", "Variance"
         ]
         
-        # Columns for threat detection model (removing specified features)
-        self.threat_detection_columns = [
-            "Header_Length", "Protocol Type", "Time_To_Live", "Rate",
-            "ack_count", "HTTP", "HTTPS", "DNS", "TCP", "UDP", "DHCP", "ICMP", "IPv",
-            "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "Variance"
-        ]
-        
         # Flow tracking
         self.tcpflows = defaultdict(list)
         self.udpflows = defaultdict(list)
@@ -62,7 +55,6 @@ class MLModelService:
         
         # Recent results storage for WebSocket access
         self.recent_results = []
-        self.max_recent_results = 100  # Keep last 100 results
 
     def load_model(self):
         """Load the ML models"""
@@ -88,7 +80,6 @@ class MLModelService:
             return False
 
     def extract_tcp_flags(self, tcp_packet):
-        """Extract TCP flags as binary values"""
         if not tcp_packet:
             return [0] * 8
             
@@ -105,7 +96,6 @@ class MLModelService:
         ]
 
     def identify_application_protocol(self, src_port, dst_port):
-        """Identify application protocol based on ports"""
         protocols = {
             'HTTP': 0, 'HTTPS': 0, 'DNS': 0, 'Telnet': 0, 'SMTP': 0,
             'SSH': 0, 'IRC': 0, 'DHCP': 0
@@ -132,13 +122,16 @@ class MLModelService:
         return protocols
 
     def get_flow_key(self, src_ip, src_port, dst_ip, dst_port):
-        """Create consistent flow key (bidirectional)"""
+        # Create consistent flow key (bidirectional)
         flow = sorted([(src_ip, src_port), (dst_ip, dst_port)])
         return (flow[0], flow[1])
 
     def process_packet(self, packet):
-        """Process a single packet and extract features"""
         try:
+            # Skip packets without IP layer (e.g., ARP, non-IP protocols)
+            if IP not in packet:
+                return None
+                
             # Basic packet info
             packet_size = len(packet)
             self.packet_sizes.append(packet_size)
@@ -168,90 +161,84 @@ class MLModelService:
             self.last_packet_time = current_time
             
             # Extract IP layer information
-            if IP in packet:
-                ip_layer = packet[IP]
-                features['IPv'] = 1
-                features['Protocol Type'] = ip_layer.proto
-                features['Time_To_Live'] = ip_layer.ttl
-                features['Header_Length'] = ip_layer.ihl * 4  # IP header length
+            ip_layer = packet[IP]
+            features['IPv'] = 1
+            features['Protocol Type'] = ip_layer.proto
+            features['Time_To_Live'] = ip_layer.ttl
+            features['Header_Length'] = ip_layer.ihl * 4  # IP header length
+            
+            src_ip = ip_layer.src
+            dst_ip = ip_layer.dst
+            
+            # Update IP counters for flow analysis
+            self.src_ip_byte[src_ip] += packet_size
+            self.dst_ip_byte[dst_ip] += packet_size
+            self.src_packet_count[src_ip] += 1
+            self.dst_packet_count[dst_ip] += 1
+            
+            # Process TCP
+            if TCP in packet:
+                tcp_layer = packet[TCP]
+                features['TCP'] = 1
+                features['Header_Length'] += tcp_layer.dataofs * 4
                 
-                src_ip = ip_layer.src
-                dst_ip = ip_layer.dst
+                # Extract TCP flags
+                tcp_flags = self.extract_tcp_flags(tcp_layer)
+                features['fin_flag_number'] = tcp_flags[0]
+                features['syn_flag_number'] = tcp_flags[1]
+                features['rst_flag_number'] = tcp_flags[2]
+                features['psh_flag_number'] = tcp_flags[3]
+                features['ack_flag_number'] = tcp_flags[4]
+                features['ece_flag_number'] = tcp_flags[6]
+                features['cwr_flag_number'] = tcp_flags[7]
                 
-                # Update IP counters for flow analysis
-                self.src_ip_byte[src_ip] += packet_size
-                self.dst_ip_byte[dst_ip] += packet_size
-                self.src_packet_count[src_ip] += 1
-                self.dst_packet_count[dst_ip] += 1
+                # Update flag counters for current packet
+                if tcp_flags[4]: features['ack_count'] = 1
+                if tcp_flags[1]: features['syn_count'] = 1
+                if tcp_flags[0]: features['fin_count'] = 1
+                if tcp_flags[2]: features['rst_count'] = 1
                 
-                # Process TCP
-                if TCP in packet:
-                    tcp_layer = packet[TCP]
-                    features['TCP'] = 1
-                    features['Header_Length'] += tcp_layer.dataofs * 4
-                    
-                    # Extract TCP flags
-                    tcp_flags = self.extract_tcp_flags(tcp_layer)
-                    features['fin_flag_number'] = tcp_flags[0]
-                    features['syn_flag_number'] = tcp_flags[1]
-                    features['rst_flag_number'] = tcp_flags[2]
-                    features['psh_flag_number'] = tcp_flags[3]
-                    features['ack_flag_number'] = tcp_flags[4]
-                    features['ece_flag_number'] = tcp_flags[6]
-                    features['cwr_flag_number'] = tcp_flags[7]
-                    
-                    # Update flag counters for current packet
-                    if tcp_flags[4]: features['ack_count'] = 1
-                    if tcp_flags[1]: features['syn_count'] = 1
-                    if tcp_flags[0]: features['fin_count'] = 1
-                    if tcp_flags[2]: features['rst_count'] = 1
-                    
-                    # Flow tracking
-                    flow_key = self.get_flow_key(src_ip, tcp_layer.sport, dst_ip, tcp_layer.dport)
-                    features['flow_key'] = str(flow_key)
-                    flow_data = {
-                        'byte_count': packet_size,
-                        'header_len': features['Header_Length'],
-                        'ts': features['ts']  # Use ts from features for flow tracking
-                    }
-                    self.tcpflows[flow_key].append(flow_data)
-                    
-                    # Application protocol identification
-                    app_protocols = self.identify_application_protocol(tcp_layer.sport, tcp_layer.dport)
-                    features.update(app_protocols)
-                    
-                # Process UDP
-                elif UDP in packet:
-                    udp_layer = packet[UDP]
-                    features['UDP'] = 1
-                    features['Header_Length'] += 8  # UDP header is fixed 8 bytes
-                    
-                    # Flow tracking
-                    flow_key = self.get_flow_key(src_ip, udp_layer.sport, dst_ip, udp_layer.dport)
-                    features['flow_key'] = str(flow_key)
-                    flow_data = {
-                        'byte_count': packet_size,
-                        'header_len': features['Header_Length'],
-                        'ts': features['ts']  # Use ts from features for flow tracking
-                    }
-                    self.udpflows[flow_key].append(flow_data)
-                    
-                    # Application protocol identification
-                    app_protocols = self.identify_application_protocol(udp_layer.sport, udp_layer.dport)
-                    features.update(app_protocols)
-                    
-                # Process ICMP
-                elif ICMP in packet:
-                    features['ICMP'] = 1
-                    
-                # Process IGMP
-                elif packet.haslayer('IGMP'):
-                    features['IGMP'] = 1
-                    
-            # Process ARP
-            elif ARP in packet:
-                features['ARP'] = 1
-                features['Header_Length'] = 28  # ARP header size
+                # Flow tracking
+                flow_key = self.get_flow_key(src_ip, tcp_layer.sport, dst_ip, tcp_layer.dport)
+                features['flow_key'] = str(flow_key)
+                flow_data = {
+                    'byte_count': packet_size,
+                    'header_len': features['Header_Length'],
+                    'ts': features['ts']  # Use ts from features for flow tracking
+                }
+                self.tcpflows[flow_key].append(flow_data)
+                
+                # Application protocol identification
+                app_protocols = self.identify_application_protocol(tcp_layer.sport, tcp_layer.dport)
+                features.update(app_protocols)
+                
+            # Process UDP
+            elif UDP in packet:
+                udp_layer = packet[UDP]
+                features['UDP'] = 1
+                features['Header_Length'] += 8  # UDP header is fixed 8 bytes
+                
+                # Flow tracking
+                flow_key = self.get_flow_key(src_ip, udp_layer.sport, dst_ip, udp_layer.dport)
+                features['flow_key'] = str(flow_key)
+                flow_data = {
+                    'byte_count': packet_size,
+                    'header_len': features['Header_Length'],
+                    'ts': features['ts']  # Use ts from features for flow tracking
+                }
+                self.udpflows[flow_key].append(flow_data)
+                
+                # Application protocol identification
+                app_protocols = self.identify_application_protocol(udp_layer.sport, udp_layer.dport)
+                features.update(app_protocols)
+                
+            # Process ICMP
+            elif ICMP in packet:
+                features['ICMP'] = 1
+                
+            # Process IGMP
+            elif packet.haslayer('IGMP'):
+                features['IGMP'] = 1
                 
             # Calculate packet size statistics
             if self.packet_sizes:
@@ -269,7 +256,6 @@ class MLModelService:
             return None
 
     def packet_handler(self, packet):
-        """Callback function for each captured packet"""
         if not self.running:
             return
             
@@ -282,13 +268,16 @@ class MLModelService:
             
 
     def batch_processor(self):
-        """Process packets in per-flow batches and make predictions"""
         flow_batches = {}
 
         while self.running:
             try:
                 features = self.packet_queue.get(timeout=1)
                 flow_key = features.get('flow_key', 'NO_FLOW')
+
+                # Skip flows without valid flow keys (from non-IP packets)
+                if flow_key == 'NO_FLOW' or not flow_key:
+                    continue
 
                 if flow_key not in flow_batches:
                     flow_batches[flow_key] = []
@@ -365,8 +354,14 @@ class MLModelService:
                 # Build a single full DataFrame aligned to main model columns
                 full_df = pd.DataFrame([aggregated], columns=self.columns).fillna(0)
 
-                # Stage 1: Threat Detection Model using reduced column view
-                threat_df = full_df.reindex(columns=self.threat_detection_columns, fill_value=0)
+                # Stage 1: Threat Detection using a reduced column view derived from full_df
+                # Drop columns not needed by the threat detection model
+                threat_df = full_df.drop(columns=[
+                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
+                    'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
+                    'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
+                    'IAT', 'Number'
+                ])
                 threat_pred = self.threat_detection_model.predict(threat_df.to_numpy())[0]
                 is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
 
@@ -404,8 +399,9 @@ class MLModelService:
                 
                 # Store recent result for WebSocket access
                 self.recent_results.append(batch_info)
-                if len(self.recent_results) > self.max_recent_results:
-                    self.recent_results.pop(0)  # Remove oldest result
+                
+                # Debug logging
+                print(f"🔍 FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
                 
                 return batch_info
                 

@@ -12,11 +12,15 @@ async def start_packet_capture(websocket):
             if stop_event.is_set():
                 return True
             try:
+                # Skip packets without IP layer (e.g., ARP, non-IP protocols)
+                if IP not in packet:
+                    return
+                    
                 summary = {
                     "time": str(packet.time),
                     "protocol": packet.name,
-                    "src": packet[IP].src if IP in packet else "",
-                    "dst": packet[IP].dst if IP in packet else "",
+                    "src": packet[IP].src,
+                    "dst": packet[IP].dst,
                     "length": len(packet)
                 }
                 asyncio.run_coroutine_threadsafe(websocket.send_json(summary), loop)
