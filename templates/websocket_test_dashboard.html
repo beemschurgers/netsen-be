@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Endpoints Test Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        .endpoints-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        .endpoint-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 25px;
+            text-decoration: none;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .endpoint-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            text-decoration: none;
+            color: white;
+        }
+        .endpoint-card.packets {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .endpoint-card.threats {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .endpoint-card.devices {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .endpoint-card.stats {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .endpoint-card.performance {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        .endpoint-card.talkers {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+        .endpoint-title {
+            font-size: 1.4em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .endpoint-description {
+            font-size: 0.95em;
+            opacity: 0.9;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+        .endpoint-url {
+            font-family: monospace;
+            font-size: 0.85em;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .info-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+            border-left: 4px solid #007bff;
+        }
+        .info-section h3 {
+            color: #333;
+            margin-top: 0;
+        }
+        .info-section p {
+            color: #666;
+            line-height: 1.6;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-indicator.online {
+            background-color: #28a745;
+        }
+        .status-indicator.offline {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 WebSocket Test Dashboard</h1>
+        <p class="subtitle">Test all available WebSocket endpoints for the network monitoring system</p>
+
+        <div class="endpoints-grid">
+            <a href="index.html" class="endpoint-card packets">
+                <div class="endpoint-title">📡 Packet Capture</div>
+                <div class="endpoint-description">
+                    Real-time network packet monitoring with protocol analysis, source/destination tracking, and packet size information.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/packets</div>
+            </a>
+
+            <a href="threats_test.html" class="endpoint-card threats">
+                <div class="endpoint-title">🛡️ Threat Detection</div>
+                <div class="endpoint-description">
+                    Monitor security threats and malicious activities with severity classification and real-time alerts.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/threats</div>
+            </a>
+
+            <a href="devices_test.html" class="endpoint-card devices">
+                <div class="endpoint-title">💻 Network Devices</div>
+                <div class="endpoint-description">
+                    Discover and monitor connected devices with IP addresses, MAC addresses, hostnames, and status information.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/devices</div>
+            </a>
+
+            <a href="network_stats_test.html" class="endpoint-card stats">
+                <div class="endpoint-title">📊 Network Statistics</div>
+                <div class="endpoint-description">
+                    Track network performance metrics including bandwidth usage, packet counts, and connection statistics.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/network-stats</div>
+            </a>
+
+            <a href="system_performance_test.html" class="endpoint-card performance">
+                <div class="endpoint-title">⚡ System Performance</div>
+                <div class="endpoint-description">
+                    Monitor system resources including CPU usage, memory consumption, disk space, and network I/O metrics.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/system-performance</div>
+            </a>
+
+            <a href="top_talkers_test.html" class="endpoint-card talkers">
+                <div class="endpoint-title">🔝 Top Talkers</div>
+                <div class="endpoint-description">
+                    Identify the most active network participants by data volume and connection frequency.
+                </div>
+                <div class="endpoint-url">ws://localhost:8000/ws/top-talkers</div>
+            </a>
+        </div>
+
+        <div class="info-section">
+            <h3>📋 Testing Instructions</h3>
+            <p>
+                <strong>1.</strong> Make sure your FastAPI server is running on localhost:8000<br>
+                <strong>2.</strong> Click on any endpoint card above to open the test page<br>
+                <strong>3.</strong> Each test page will automatically connect to its WebSocket endpoint<br>
+                <strong>4.</strong> Monitor the connection status and incoming data in real-time<br>
+                <strong>5.</strong> Check the raw data log to see the exact WebSocket messages
+            </p>
+        </div>
+
+        <div class="info-section">
+            <h3>🚀 Available Endpoints</h3>
+            <p>
+                All endpoints are designed to provide real-time data streaming via WebSocket connections.
+                Each test page includes connection status monitoring, formatted data display, and raw message logging
+                to help you verify that the endpoints are working correctly.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Simple connectivity test for the main server
+        function checkServerStatus() {
+            const indicators = document.querySelectorAll('.status-indicator');
+
+            // Try to connect to each WebSocket endpoint briefly to check availability
+            const endpoints = [
+                'ws://localhost:8000/ws/packets',
+                'ws://localhost:8000/ws/threats',
+                'ws://localhost:8000/ws/devices',
+                'ws://localhost:8000/ws/network-stats',
+                'ws://localhost:8000/ws/system-performance',
+                'ws://localhost:8000/ws/top-talkers'
+            ];
+
+            // This would typically check server availability
+            // For now, just add status indicators to the cards
+            document.querySelectorAll('.endpoint-card').forEach(card => {
+                const indicator = document.createElement('span');
+                indicator.className = 'status-indicator offline';
+                indicator.title = 'Click to test connection';
+                card.querySelector('.endpoint-title').prepend(indicator);
+            });
+        }
+
+        // Check status when page loads
+        checkServerStatus();
+    </script>
+</body>
+</html>
+

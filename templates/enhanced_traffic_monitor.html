@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Network Traffic Monitor - Pyshark Analytics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px;
+        }
+
+        .status.connected {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status.disconnected {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .card h3 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f1f1;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .traffic-table {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .traffic-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+
+        .traffic-table th,
+        .traffic-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .traffic-table th {
+            background-color: #f7fafc;
+            font-weight: 600;
+            color: #4a5568;
+            position: sticky;
+            top: 0;
+        }
+
+        .traffic-table td {
+            font-size: 0.85em;
+        }
+
+        .protocol {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .protocol.TCP {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .protocol.UDP {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .protocol.ICMP {
+            background-color: #fff3e0;
+            color: #f57c00;
+        }
+
+        .protocol.HTTP {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .protocol.HTTPS {
+            background-color: #e1f5fe;
+            color: #0277bd;
+        }
+
+        .application {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            background-color: #f5f5f5;
+            color: #666;
+        }
+
+        .security-alert {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+        }
+
+        .chart-container {
+            height: 200px;
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            transition: width 0.3s ease;
+        }
+
+        .top-talkers {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .talker-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f1f1;
+        }
+
+        .talker-ip {
+            font-family: monospace;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .talker-traffic {
+            color: #4a5568;
+            font-size: 0.9em;
+        }
+
+        .geographic-traffic {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+
+        .geo-item {
+            text-align: center;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .geo-label {
+            font-size: 0.8em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+
+        .geo-value {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .connection-status {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+        }
+
+        .timestamp {
+            color: #6c757d;
+            font-size: 0.8em;
+            font-family: monospace;
+        }
+
+        .flags {
+            display: flex;
+            gap: 2px;
+        }
+
+        .flag {
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 0.7em;
+            background-color: #007bff;
+            color: white;
+        }
+
+        .health-score {
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .health-score-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .detailed-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Enhanced Network Traffic Monitor</h1>
+            <div class="connection-status">
+                <span id="connectionStatus" class="status disconnected">Disconnected</span>
+                <div class="timestamp">Last Update: <span id="lastUpdate">Never</span></div>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <!-- Network Health Overview -->
+            <div class="card">
+                <h3>🎯 Network Health Overview</h3>
+                <div class="health-score">
+                    <div class="health-score-value" id="healthScore">100</div>
+                    <div>Health Score</div>
+                </div>
+                <div class="detailed-stats">
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalConnections">0</div>
+                        <div class="stat-label">Total Connections</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="activeConnections">0</div>
+                        <div class="stat-label">Active Connections</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalPackets">0</div>
+                        <div class="stat-label">Total Packets</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="retransmissionRate">0%</div>
+                        <div class="stat-label">Retransmission Rate</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Traffic -->
+            <div class="card">
+                <h3>🌊 Real-time Traffic</h3>
+                <div class="metric">
+                    <span class="metric-label">Current Bandwidth:</span>
+                    <span class="metric-value" id="currentBandwidth">0 Mbps</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Bandwidth:</span>
+                    <span class="metric-value" id="totalBandwidth">0 MB</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Peak Bandwidth:</span>
+                    <span class="metric-value" id="peakBandwidth">0 MB</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="bandwidthProgress" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Top Talkers -->
+            <div class="card">
+                <h3>👥 Top Talkers</h3>
+                <div class="top-talkers" id="topTalkers">
+                    <div class="talker-item">
+                        <span class="talker-ip">No data available</span>
+                        <span class="talker-traffic">0 bytes</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Protocol Distribution -->
+            <div class="card">
+                <h3>📊 Protocol Distribution</h3>
+                <div id="protocolStats">
+                    <div class="metric">
+                        <span class="metric-label">TCP:</span>
+                        <span class="metric-value">0 packets</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Application Usage -->
+            <div class="card">
+                <h3>🔧 Application Usage</h3>
+                <div id="applicationStats">
+                    <div class="metric">
+                        <span class="metric-label">HTTPS:</span>
+                        <span class="metric-value">0 packets</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Geographic Traffic -->
+            <div class="card">
+                <h3>🌍 Geographic Traffic Distribution</h3>
+                <div class="geographic-traffic" id="geographicTraffic">
+                    <div class="geo-item">
+                        <div class="geo-label">Local</div>
+                        <div class="geo-value">0 bytes</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Overview -->
+            <div class="card">
+                <h3>🔒 Security Overview</h3>
+                <div class="metric">
+                    <span class="metric-label">Security Alerts:</span>
+                    <span class="metric-value" id="securityAlerts">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Suspicious IPs:</span>
+                    <span class="metric-value" id="suspiciousIPs">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Encrypted Traffic:</span>
+                    <span class="metric-value" id="encryptedTraffic">0%</span>
+                </div>
+                <div id="securityAlertsList"></div>
+            </div>
+
+            <!-- Recent DNS Queries -->
+            <div class="card">
+                <h3>🌐 Recent DNS Queries</h3>
+                <div id="dnsQueries">
+                    <div class="metric">
+                        <span class="metric-label">No DNS queries captured yet</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent HTTP Requests -->
+            <div class="card">
+                <h3>🌐 Recent HTTP Requests</h3>
+                <div id="httpRequests">
+                    <div class="metric">
+                        <span class="metric-label">No HTTP requests captured yet</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Traffic Table -->
+        <div class="card">
+            <h3>📋 Live Traffic Analysis</h3>
+            <div class="traffic-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Source IP</th>
+                            <th>Dest IP</th>
+                            <th>Protocol</th>
+                            <th>Src Port</th>
+                            <th>Dst Port</th>
+                            <th>Length</th>
+                            <th>Application</th>
+                            <th>Flags</th>
+                            <th>Security</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trafficTableBody">
+                        <tr>
+                            <td colspan="10" style="text-align: center; color: #6c757d;">
+                                Waiting for traffic data...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="errorContainer"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectInterval = null;
+        let trafficData = [];
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            const lastUpdate = document.getElementById('lastUpdate');
+
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'status connected';
+                lastUpdate.textContent = new Date().toLocaleTimeString();
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+            }
+        }
+
+        function updateStatistics(stats) {
+            // Network Health
+            document.getElementById('healthScore').textContent = Math.round(stats.network_health_score || 100);
+            document.getElementById('totalConnections').textContent = formatNumber(stats.total_connections || 0);
+            document.getElementById('activeConnections').textContent = formatNumber(stats.active_connections || 0);
+            document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets || 0);
+            document.getElementById('retransmissionRate').textContent = (stats.retransmission_rate || 0).toFixed(1) + '%';
+
+            // Bandwidth
+            document.getElementById('currentBandwidth').textContent = (stats.current_bandwidth_mbps || 0).toFixed(2) + ' Mbps';
+            document.getElementById('totalBandwidth').textContent = (stats.total_bandwidth_mb || 0).toFixed(2) + ' MB';
+            document.getElementById('peakBandwidth').textContent = (stats.peak_bandwidth_mb || 0).toFixed(2) + ' MB';
+
+            // Update bandwidth progress bar
+            const bandwidthPercent = Math.min((stats.current_bandwidth_mbps || 0) / 100 * 100, 100);
+            document.getElementById('bandwidthProgress').style.width = bandwidthPercent + '%';
+
+            // Top Talkers
+            const topTalkersContainer = document.getElementById('topTalkers');
+            if (stats.top_talkers && Object.keys(stats.top_talkers).length > 0) {
+                topTalkersContainer.innerHTML = '';
+                Object.entries(stats.top_talkers).slice(0, 10).forEach(([ip, bytes]) => {
+                    const item = document.createElement('div');
+                    item.className = 'talker-item';
+                    item.innerHTML = `
+                        <span class="talker-ip">${ip}</span>
+                        <span class="talker-traffic">${formatBytes(bytes)}</span>
+                    `;
+                    topTalkersContainer.appendChild(item);
+                });
+            }
+
+            // Protocol Distribution
+            const protocolContainer = document.getElementById('protocolStats');
+            if (stats.protocol_distribution) {
+                protocolContainer.innerHTML = '';
+                Object.entries(stats.protocol_distribution).forEach(([protocol, count]) => {
+                    const item = document.createElement('div');
+                    item.className = 'metric';
+                    item.innerHTML = `
+                        <span class="metric-label">${protocol}:</span>
+                        <span class="metric-value">${formatNumber(count)} packets</span>
+                    `;
+                    protocolContainer.appendChild(item);
+                });
+            }
+
+            // Application Usage
+            const appContainer = document.getElementById('applicationStats');
+            if (stats.application_usage) {
+                appContainer.innerHTML = '';
+                Object.entries(stats.application_usage).slice(0, 8).forEach(([app, count]) => {
+                    const item = document.createElement('div');
+                    item.className = 'metric';
+                    item.innerHTML = `
+                        <span class="metric-label">${app}:</span>
+                        <span class="metric-value">${formatNumber(count)} packets</span>
+                    `;
+                    appContainer.appendChild(item);
+                });
+            }
+
+            // Geographic Traffic
+            const geoContainer = document.getElementById('geographicTraffic');
+            if (stats.geographic_traffic) {
+                geoContainer.innerHTML = '';
+                Object.entries(stats.geographic_traffic).forEach(([region, bytes]) => {
+                    const item = document.createElement('div');
+                    item.className = 'geo-item';
+                    item.innerHTML = `
+                        <div class="geo-label">${region}</div>
+                        <div class="geo-value">${formatBytes(bytes)}</div>
+                    `;
+                    geoContainer.appendChild(item);
+                });
+            }
+
+            // DNS Queries
+            const dnsContainer = document.getElementById('dnsQueries');
+            if (stats.dns_queries && stats.dns_queries.length > 0) {
+                dnsContainer.innerHTML = '';
+                stats.dns_queries.slice(0, 5).forEach(query => {
+                    const item = document.createElement('div');
+                    item.className = 'metric';
+                    item.innerHTML = `
+                        <span class="metric-label">${query.query || 'Unknown'}:</span>
+                        <span class="metric-value">${query.query_type || 'A'}</span>
+                    `;
+                    dnsContainer.appendChild(item);
+                });
+            }
+
+            // HTTP Requests
+            const httpContainer = document.getElementById('httpRequests');
+            if (stats.http_requests && stats.http_requests.length > 0) {
+                httpContainer.innerHTML = '';
+                stats.http_requests.slice(0, 5).forEach(request => {
+                    const item = document.createElement('div');
+                    item.className = 'metric';
+                    item.innerHTML = `
+                        <span class="metric-label">${request.method || 'GET'} ${request.host || 'Unknown'}:</span>
+                        <span class="metric-value">${request.uri || '/'}</span>
+                    `;
+                    httpContainer.appendChild(item);
+                });
+            }
+        }
+
+        function updateTrafficTable(traffic) {
+            if (!traffic) return;
+
+            trafficData.unshift(traffic);
+            if (trafficData.length > 50) {
+                trafficData = trafficData.slice(0, 50);
+            }
+
+            const tbody = document.getElementById('trafficTableBody');
+            tbody.innerHTML = '';
+
+            trafficData.forEach(packet => {
+                const row = document.createElement('tr');
+
+                // Create flags display
+                const flags = packet.flags || [];
+                const flagsHtml = flags.map(flag => `<span class="flag">${flag}</span>`).join('');
+
+                // Security indicators
+                const securityHtml = packet.is_suspicious ?
+                    '<span class="security-alert">SUSPICIOUS</span>' :
+                    (packet.encrypted ? '🔒' : '');
+
+                row.innerHTML = `
+                    <td class="timestamp">${packet.timestamp || ''}</td>
+                    <td>${packet.src_ip || 'N/A'}</td>
+                    <td>${packet.dst_ip || 'N/A'}</td>
+                    <td><span class="protocol ${packet.protocol}">${packet.protocol || 'Unknown'}</span></td>
+                    <td>${packet.src_port || '-'}</td>
+                    <td>${packet.dst_port || '-'}</td>
+                    <td>${packet.length || 0} bytes</td>
+                    <td><span class="application">${packet.application || 'Unknown'}</span></td>
+                    <td><div class="flags">${flagsHtml}</div></td>
+                    <td>${securityHtml}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket('ws://localhost:8000/ws/packets');
+
+                ws.onopen = function() {
+                    console.log('Connected to packet capture WebSocket');
+                    updateConnectionStatus(true);
+                    clearInterval(reconnectInterval);
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+
+                        if (data.error) {
+                            showError(data.error);
+                            return;
+                        }
+
+                        // Update statistics
+                        if (data.statistics) {
+                            updateStatistics(data.statistics);
+                        }
+
+                        // Update traffic table
+                        if (data.traffic) {
+                            updateTrafficTable(data.traffic);
+                        }
+
+                        // Update security overview
+                        if (data.statistics) {
+                            document.getElementById('securityAlerts').textContent =
+                                (data.statistics.security_alerts || []).length;
+
+                            // Count non-local IPs as potentially suspicious
+                            const suspiciousCount = Object.keys(data.statistics.top_talkers || {})
+                                .filter(ip => !ip.startsWith('192.168.') && !ip.startsWith('10.') && !ip.startsWith('172.'))
+                                .length;
+                            document.getElementById('suspiciousIPs').textContent = suspiciousCount;
+
+                            // Calculate encrypted traffic percentage
+                            const appUsage = data.statistics.application_usage || {};
+                            const httpsTraffic = appUsage.HTTPS || 0;
+                            const totalTraffic = Object.values(appUsage).reduce((a, b) => a + b, 0);
+                            const encryptedPercent = totalTraffic > 0 ? (httpsTraffic / totalTraffic * 100).toFixed(1) : 0;
+                            document.getElementById('encryptedTraffic').textContent = encryptedPercent + '%';
+                        }
+
+                        updateConnectionStatus(true);
+
+                    } catch (error) {
+                        console.error('Error parsing WebSocket data:', error);
+                        showError('Error parsing traffic data: ' + error.message);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log('Disconnected from packet capture WebSocket');
+                    updateConnectionStatus(false);
+
+                    // Attempt to reconnect every 5 seconds
+                    reconnectInterval = setInterval(() => {
+                        console.log('Attempting to reconnect...');
+                        connectWebSocket();
+                    }, 5000);
+                };
+
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    showError('WebSocket connection error. Please check if the server is running.');
+                };
+
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+                showError('Failed to connect to server: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            errorContainer.appendChild(errorDiv);
+
+            // Remove error after 10 seconds
+            setTimeout(() => {
+                errorContainer.removeChild(errorDiv);
+            }, 10000);
+        }
+
+        // Initialize WebSocket connection when page loads
+        window.addEventListener('load', function() {
+            connectWebSocket();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (ws) {
+                ws.close();
+            }
+            if (reconnectInterval) {
+                clearInterval(reconnectInterval);
+            }
+        });
+    </script>
+</body>
+</html>

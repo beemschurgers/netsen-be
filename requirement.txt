@@ -5,3 +5,6 @@ scapy
 numpy
 pandas
 scikit-learn
+psutil
+netifaces
+pyshark
