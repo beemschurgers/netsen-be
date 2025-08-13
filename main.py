@@ -5,6 +5,8 @@ from typing import List
 
 from routes.websocket_routes import router as ws_router
 from routes.html_routes import router as html_router
+from routes.api_routes import router as api_router
+from services.packet_capture import scan_devices
 
 app = FastAPI()
 
@@ -18,6 +20,7 @@ app.add_middleware(
 
 app.include_router(html_router)
 app.include_router(ws_router)
+app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn

@@ -5,6 +5,8 @@ from services.devices_ws import device_ws
 from services.network_stats_ws import network_stats_websocket
 from services.system_performance_ws import system_performance_websocket
 
+from services.threat_detection_ws import threat_detection_websocket as threat_detection_handler
+
 router = APIRouter()
 
 @router.websocket("/ws/packets")
@@ -26,6 +28,9 @@ async def network_stats_endpoint(websocket: WebSocket):
 async def threats_endpoint(websocket: WebSocket):
     await threats_websocket(websocket)
 
+@router.websocket("/ws/threat-detection")
+async def threat_detection_websocket(websocket: WebSocket):
+    await threat_detection_handler(websocket)
 
 @router.websocket("/ws/system-performance")
 async def system_performance_endpoint(websocket: WebSocket):
