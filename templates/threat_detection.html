@@ -134,20 +134,20 @@
 
     <div class="stats" id="stats">
         <div class="stat-card">
-            <div class="stat-number" id="totalPackets">0</div>
-            <div class="stat-label">Total Packets</div>
+            <div class="stat-number" id="totalFlows">0</div>
+            <div class="stat-label">Total Flows</div>
         </div>
         <div class="stat-card">
-            <div class="stat-number" id="threatsDetected">0</div>
-            <div class="stat-label">Threats Detected</div>
+            <div class="stat-number" id="threatFlows">0</div>
+            <div class="stat-label">Threat Flows</div>
         </div>
         <div class="stat-card">
-            <div class="stat-number" id="benignPackets">0</div>
-            <div class="stat-label">Benign Packets</div>
+            <div class="stat-number" id="benignFlows">0</div>
+            <div class="stat-label">Benign Flows</div>
         </div>
     </div>
 
-    <h3>Real-time Packet Analysis</h3>
+    <h3>Real-time Flow Analysis</h3>
     <div id="packetLog"></div>
 </div>
 
@@ -162,9 +162,9 @@
     }
 
     function updateStats(stats) {
-        document.getElementById('totalPackets').textContent = stats.total_packets || 0;
-        document.getElementById('threatsDetected').textContent = stats.threats_detected || 0;
-        document.getElementById('benignPackets').textContent = stats.benign_packets || 0;
+        document.getElementById('totalFlows').textContent = stats.total_flows || 0;
+        document.getElementById('threatFlows').textContent = stats.threat_flows || 0;
+        document.getElementById('benignFlows').textContent = stats.benign_flows || 0;
     }
 
     function addPacketToLog(packetData) {
@@ -183,12 +183,15 @@
         const threatIndicator = packetData.is_threat ? '⚠️ THREAT' : '✅ BENIGN';
         const threatType = packetData.threat_type || 'N/A';
 
+        const flowLine = (packetData.endpoints && packetData.endpoints.length === 2)
+            ? `Flow: ${packetData.endpoints[0].ip}:${packetData.endpoints[0].port} ↔ ${packetData.endpoints[1].ip}:${packetData.endpoints[1].port}<br>`
+            : (packetData.flow_key ? `Flow: ${packetData.flow_key}<br>` : '');
+
         packetDiv.innerHTML = `
             <strong>${timestamp}</strong> - ${threatIndicator}<br>
-            Size: ${packetData.size} bytes | Protocol: ${packetData.protocol}<br>
-            ${packetData.src} ? `Source: ${packetData.src}` : ''}${packetData.dst ? ` → Destination: ${packetData.dst}` : ''}<br>
-            ${packetData.protocol_detail ? `Details: ${packetData.protocol_detail}<br>` : ''}
-            ${packetData.is_threat ? `Threat Type: ${threatType}` : ''}
+            ${flowLine}
+            Packets: ${packetData.packet_count || 0} | Bytes: ${packetData.total_bytes || 0}<br>
+            ${packetData.is_threat ? `Threat Type: ${threatType}` : 'Label: BENIGN'}
         `;
 
         logDiv.insertBefore(packetDiv, logDiv.firstChild);
@@ -225,6 +228,9 @@
 
                 if (data.status) {
                     updateStatus(data.status, true);
+                    if (data.session_stats) {
+                        updateStats(data.session_stats);
+                    }
                     return;
                 }
 
