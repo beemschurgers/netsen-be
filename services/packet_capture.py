@@ -28,13 +28,13 @@ async def packet_capture_websocket(websocket: WebSocket):
         await packet_analyzer.start_capture(interface=None)
         
         while True:
-            # Get captured packet data
-            packet_data = packet_analyzer.get_packet()
-            
+            # Get captured packet data using the correct method name
+            packet_data = await packet_analyzer.get_packet_data()
+
             if packet_data:
-                # Get comprehensive statistics
-                statistics = packet_analyzer.get_comprehensive_statistics()
-                
+                # Get statistics using the correct method name
+                statistics = packet_analyzer.get_statistics()
+
                 # Create response with both packet and statistics
                 response = {
                     "traffic": packet_data,
@@ -44,7 +44,7 @@ async def packet_capture_websocket(websocket: WebSocket):
                 await websocket.send_json(response)
             else:
                 # Send periodic statistics even without new packets
-                statistics = packet_analyzer.get_comprehensive_statistics()
+                statistics = packet_analyzer.get_statistics()
                 response = {
                     "traffic": None,
                     "statistics": statistics
@@ -64,7 +64,7 @@ async def packet_capture_websocket(websocket: WebSocket):
             await websocket.send_json({
                 "error": f"Packet capture error: {str(e)}",
                 "traffic": None,
-                "statistics": packet_analyzer.get_comprehensive_statistics()
+                "statistics": packet_analyzer.get_statistics()
             })
         except:
             pass
