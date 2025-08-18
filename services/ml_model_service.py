@@ -8,13 +8,14 @@ from datetime import datetime
 from scapy.all import sniff, IP, TCP, UDP, ICMP, ARP
 import os
 import queue
+from concurrent.futures import ThreadPoolExecutor
 
 
 class MLModelService:
     def __init__(self, interface=None, batch_size=10, capture_duration=None):
         # ML Models
-        self.frst_model = None
-        self.threat_detection_model = None
+        self.stage1_model = None
+        self.stage2_model = None
         self.is_initialized = False
         
         # Capture settings
@@ -59,18 +60,13 @@ class MLModelService:
     def load_model(self):
         """Load the ML models"""
         try:
-            # Load threat detection model
-            threat_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'threat_detection_model.pkl')
-            if os.path.exists(threat_model_path):
-                with open(threat_model_path, 'rb') as f:
-                    self.threat_detection_model = pickle.load(f)
-            else:
-                return False
+            stage1_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage1_model.pkl')
+            with open(stage1_model_path, 'rb') as f:
+                self.stage1_model = pickle.load(f)
 
-            # Load main classification model
-            model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'random_forest_model.pkl')
-            with open(model_path, 'rb') as f:
-                self.frst_model = pickle.load(f)
+            stage2_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage2_model.pkl')
+            with open(stage2_model_path, 'rb') as f:
+                self.stage2_model = pickle.load(f)
 
             self.is_initialized = True
             print("All ML Models loaded successfully!")
@@ -298,7 +294,6 @@ class MLModelService:
                 self.process_batch_with_ml(batch)
 
     def process_batch_with_ml(self, batch_data):
-        """Process a batch of features and make prediction using two-stage approach"""
         if not self.is_initialized:
             return None
 
@@ -351,28 +346,34 @@ class MLModelService:
                     'Variance': df['Tot size'].var()
                 }
                 
-                # Build a single full DataFrame aligned to main model columns
+                # Build a single full DataFrame
                 full_df = pd.DataFrame([aggregated], columns=self.columns).fillna(0)
 
-                # Stage 1: Threat Detection using a reduced column view derived from full_df
-                # Drop columns not needed by the threat detection model
-                threat_df = full_df.drop(columns=[
+                stage1_df = full_df.drop(columns=[
                     'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
                     'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
                     'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
                     'IAT', 'Number'
                 ])
-                threat_pred = self.threat_detection_model.predict(threat_df.to_numpy())[0]
-                is_threat = bool(threat_pred)  # Assuming binary classification (0=benign, 1=threat)
+                stage2_df = full_df.drop(columns=[
+                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
+                    'ece_flag_number', 'cwr_flag_number', 'syn_count', 'fin_count', 'rst_count', 
+                    'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC', 'DHCP', 'ARP', 'IGMP', 'IPv', 'LLC', 
+                    'Min', 'IAT', 'Number', 'Variance'])
 
-                # Stage 2: Main Classification Model (only if threat detected)
-                main_df = None
-                if is_threat:
-                    main_df = full_df
-                    pred = self.frst_model.predict(full_df.to_numpy())[0]
-                    label = str(pred)
-                else:
-                    label = 'BENIGN'
+                # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
+                stage1_np = stage1_df.to_numpy()
+                stage2_np = stage2_df.to_numpy()
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future_stage1 = executor.submit(self.stage1_model.predict, stage1_np)
+                    future_stage2 = executor.submit(self.stage2_model.predict, stage2_np)
+                    stage1_out = future_stage1.result()[0]
+                    is_threat = bool(stage1_out)  # Assuming binary classification (0=benign, 1=threat)
+                    if is_threat:
+                        stage2_out = future_stage2.result()[0]
+                        label = str(stage2_out)
+                    else:
+                        label = 'BENIGN'
                 
                 # Get timestamp
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -393,15 +394,15 @@ class MLModelService:
                     "predicted_label": label,
                     "is_threat": is_threat,
                     "threat_type": label if is_threat else None,
-                    "threat_dataframe": threat_df.to_dict('records')[0] if is_threat else None,
-                    "main_dataframe": main_df.to_dict('records')[0] if main_df is not None else None
+                    "threat_dataframe": stage1_df.to_dict('records')[0] if is_threat else None,
+                    "main_dataframe": stage2_df.to_dict('records')[0] if stage2_df is not None else None
                 }
                 
                 # Store recent result for WebSocket access
                 self.recent_results.append(batch_info)
                 
                 # Debug logging
-                print(f"🔍 FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
+                print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
                 
                 return batch_info
                 
