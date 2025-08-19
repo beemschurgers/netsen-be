@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class MLModelService:
-    def __init__(self, interface=None, batch_size=10, capture_duration=None):
+    def __init__(self, interface=None, max_batch_size=100, capture_duration=None):
         # ML Models
         self.stage1_model = None
         self.stage2_model = None
@@ -20,8 +20,9 @@ class MLModelService:
         
         # Capture settings
         self.interface = interface
-        self.batch_size = batch_size
+        self.max_batch_size = max_batch_size
         self.capture_duration = capture_duration
+        self.max_batch_wait_seconds = 5  # Process incomplete batches after 3 seconds
         
         # Feature columns for ML models
         self.columns = [
@@ -43,7 +44,7 @@ class MLModelService:
         self.dst_packet_count = defaultdict(int)
         self.src_ip_byte = defaultdict(int)
         self.dst_ip_byte = defaultdict(int)
-        self.packet_sizes = deque(maxlen=1000)
+        self.packet_sizes = deque(maxlen=10000)
         
         # Timing and control
         self.last_packet_time = 0
@@ -265,6 +266,7 @@ class MLModelService:
 
     def batch_processor(self):
         flow_batches = {}
+        last_processed = {}  # Track when each flow was last processed
 
         while self.running:
             try:
@@ -277,18 +279,36 @@ class MLModelService:
 
                 if flow_key not in flow_batches:
                     flow_batches[flow_key] = []
+                    last_processed[flow_key] = time.time()
 
                 flow_batches[flow_key].append(features)
 
-                if len(flow_batches[flow_key]) >= self.batch_size:
-                    self.process_batch_with_ml(flow_batches[flow_key])
-                    flow_batches[flow_key] = []
+                # Process batch if it reaches max size OR if it's been waiting too long
+                current_time = time.time()
+                if (len(flow_batches[flow_key]) >= self.max_batch_size or 
+                    (len(flow_batches[flow_key]) > 0 and 
+                     current_time - last_processed[flow_key] >= self.max_batch_wait_seconds)):
+                    
+                    if len(flow_batches[flow_key]) > 0:
+                        self.process_batch_with_ml(flow_batches[flow_key])
+                        flow_batches[flow_key] = []
+                        last_processed[flow_key] = current_time
 
             except queue.Empty:
+                # Check for time-based flushing of incomplete batches
+                current_time = time.time()
+                for flow_key in list(flow_batches.keys()):
+                    if (len(flow_batches[flow_key]) > 0 and 
+                        current_time - last_processed[flow_key] >= self.max_batch_wait_seconds):
+                        
+                        self.process_batch_with_ml(flow_batches[flow_key])
+                        flow_batches[flow_key] = []
+                        last_processed[flow_key] = current_time
                 continue
             except Exception as e:
                 print(f"Error in batch processor: {e}")
 
+        # Final flush of remaining batches on shutdown
         for batch in flow_batches.values():
             if batch:
                 self.process_batch_with_ml(batch)
@@ -432,7 +452,7 @@ class MLModelService:
         finally:
             self.running = False
 
-    def get_recent_results(self, limit=10):
+    def get_recent_results(self, limit=100):
         return self.recent_results[-limit:] if self.recent_results else []
 
 
