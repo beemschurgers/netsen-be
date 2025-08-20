@@ -153,7 +153,7 @@ async def threat_detection_websocket(websocket: WebSocket):
             "model_loaded": ml_service.is_initialized,
             "message": "Real-time ML-based threat detection is now active",
             "session_stats": session_stats,
-            "max_batch_size": ml_service.max_batch_size,
+            "batch_size": ml_service.batch_size,
         }
     )
 

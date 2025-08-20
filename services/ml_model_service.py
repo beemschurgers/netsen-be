@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class MLModelService:
-    def __init__(self, interface=None, max_batch_size=100, capture_duration=None):
+    def __init__(self, interface=None, batch_size=100, capture_duration=None):
         # ML Models
         self.stage1_model = None
         self.stage2_model = None
@@ -20,9 +20,9 @@ class MLModelService:
         
         # Capture settings
         self.interface = interface
-        self.max_batch_size = max_batch_size
+        self.batch_size = batch_size
         self.capture_duration = capture_duration
-        self.max_batch_wait_seconds = 5  # Process incomplete batches after 3 seconds
+        self.max_batch_wait_seconds = 5
         
         # Feature columns for ML models
         self.columns = [
@@ -111,7 +111,7 @@ class MLModelService:
             protocols['SMTP'] = 1
         if src_port == 22 or dst_port == 22:
             protocols['SSH'] = 1
-        if src_port == 21 or dst_port == 21:
+        if src_port == 6667 or dst_port == 6667:
             protocols['IRC'] = 1
         if (src_port == 67 and dst_port == 68) or (src_port == 68 and dst_port == 67):
             protocols['DHCP'] = 1
@@ -285,13 +285,15 @@ class MLModelService:
 
                 # Process batch if it reaches max size OR if it's been waiting too long
                 current_time = time.time()
-                if (len(flow_batches[flow_key]) >= self.max_batch_size or 
+                if (len(flow_batches[flow_key]) >= self.batch_size or 
                     (len(flow_batches[flow_key]) > 0 and 
                      current_time - last_processed[flow_key] >= self.max_batch_wait_seconds)):
                     
-                    if len(flow_batches[flow_key]) > 0:
+                    if len(flow_batches[flow_key]) > 2:
                         self.process_batch_with_ml(flow_batches[flow_key])
                         flow_batches[flow_key] = []
+                        last_processed[flow_key] = current_time
+                    elif len(flow_batches[flow_key]) > 0:
                         last_processed[flow_key] = current_time
 
             except queue.Empty:
@@ -301,9 +303,12 @@ class MLModelService:
                     if (len(flow_batches[flow_key]) > 0 and 
                         current_time - last_processed[flow_key] >= self.max_batch_wait_seconds):
                         
-                        self.process_batch_with_ml(flow_batches[flow_key])
-                        flow_batches[flow_key] = []
-                        last_processed[flow_key] = current_time
+                        if len(flow_batches[flow_key]) > 2:
+                            self.process_batch_with_ml(flow_batches[flow_key])
+                            flow_batches[flow_key] = []
+                            last_processed[flow_key] = current_time
+                        else:
+                            last_processed[flow_key] = current_time
                 continue
             except Exception as e:
                 print(f"Error in batch processor: {e}")
@@ -328,7 +333,7 @@ class MLModelService:
                     'Header_Length': df['Header_Length'].mean(),
                     'Protocol Type': df['Protocol Type'].mode().iloc[0] if len(df['Protocol Type'].mode()) > 0 else 0,
                     'Time_To_Live': df['Time_To_Live'].mean(),
-                    'Rate': len(df) / (df['ts'].max() - df['ts'].min()) if df['ts'].max() != df['ts'].min() else 0,
+                    'Rate': len(df) / (df['ts'].max() - df['ts'].min()),
                     'fin_flag_number': df['fin_flag_number'].sum() / len(df),
                     'syn_flag_number': df['syn_flag_number'].sum() / len(df),
                     'rst_flag_number': df['rst_flag_number'].sum() / len(df),
@@ -367,7 +372,7 @@ class MLModelService:
                 }
                 
                 # Build a single full DataFrame
-                full_df = pd.DataFrame([aggregated], columns=self.columns).fillna(0)
+                full_df = pd.DataFrame([aggregated], columns=self.columns)
 
                 stage1_df = full_df.drop(columns=[
                     'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
