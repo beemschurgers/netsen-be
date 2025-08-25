@@ -1,1 +1,3 @@
-empty folder for ML model
+Model naming reminder
+First model: stage1_model
+second model: stage2_model
