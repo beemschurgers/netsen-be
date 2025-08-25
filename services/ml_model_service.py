@@ -22,7 +22,7 @@ class MLModelService:
         self.interface = interface
         self.batch_size = batch_size
         self.capture_duration = capture_duration
-        self.max_batch_wait_seconds = 5
+        self.max_batch_wait_seconds = 3
         
         # Feature columns for ML models
         self.columns = [
@@ -118,10 +118,10 @@ class MLModelService:
             
         return protocols
 
-    def get_flow_key(self, src_ip, src_port, dst_ip, dst_port):
+    def get_flow_key(self, src_ip, dst_ip):
         # Create consistent flow key (bidirectional)
-        flow = sorted([(src_ip, src_port), (dst_ip, dst_port)])
-        return (flow[0], flow[1])
+        flow_ips = sorted([src_ip, dst_ip])
+        return (flow_ips[0], flow_ips[1])
 
     def process_packet(self, packet):
         try:
@@ -196,7 +196,7 @@ class MLModelService:
                 if tcp_flags[2]: features['rst_count'] = 1
                 
                 # Flow tracking
-                flow_key = self.get_flow_key(src_ip, tcp_layer.sport, dst_ip, tcp_layer.dport)
+                flow_key = self.get_flow_key(src_ip, dst_ip)
                 features['flow_key'] = str(flow_key)
                 flow_data = {
                     'byte_count': packet_size,
@@ -216,7 +216,7 @@ class MLModelService:
                 features['Header_Length'] += 8  # UDP header is fixed 8 bytes
                 
                 # Flow tracking
-                flow_key = self.get_flow_key(src_ip, udp_layer.sport, dst_ip, udp_layer.dport)
+                flow_key = self.get_flow_key(src_ip, dst_ip)
                 features['flow_key'] = str(flow_key)
                 flow_data = {
                     'byte_count': packet_size,
