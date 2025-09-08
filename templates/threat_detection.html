@@ -238,10 +238,16 @@
                 if (data.timestamp) {
                     addPacketToLog(data);
 
-                    // Update stats if available
-                    if (data.session_stats) {
-                        updateStats(data.session_stats);
+                    // Update stats immediately for each flow
+                    if (data.is_threat) {
+                        document.getElementById('threatFlows').textContent = 
+                            parseInt(document.getElementById('threatFlows').textContent) + 1;
+                    } else {
+                        document.getElementById('benignFlows').textContent = 
+                            parseInt(document.getElementById('benignFlows').textContent) + 1;
                     }
+                    document.getElementById('totalFlows').textContent = 
+                        parseInt(document.getElementById('totalFlows').textContent) + 1;
                 }
             } catch (e) {
                 console.error('Error parsing message:', e);
