@@ -61,11 +61,11 @@ class MLModelService:
     def load_model(self):
         """Load the ML models"""
         try:
-            stage1_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage1_model.pkl')
+            stage1_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'new_frst_model_1st_stage.pkl')
             with open(stage1_model_path, 'rb') as f:
                 self.stage1_model = pickle.load(f)
 
-            stage2_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage2_model.pkl')
+            stage2_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'new_frst_model_2nd_stage.pkl')
             with open(stage2_model_path, 'rb') as f:
                 self.stage2_model = pickle.load(f)
 
@@ -375,16 +375,11 @@ class MLModelService:
                 full_df = pd.DataFrame([aggregated], columns=self.columns)
 
                 stage1_df = full_df.drop(columns=[
-                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-                    'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
-                    'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
-                    'IAT', 'Number'
-                ])
+                    'fin_flag_number', 'rst_flag_number', 'ece_flag_number', 'cwr_flag_number', 'fin_count',
+                    'rst_count', 'HTTP', 'Telnet', 'SMTP', 'SSH', 'DHCP', 'ARP', 'ICMP', 'IGMP', 'LLC', 'IPv'])
                 stage2_df = full_df.drop(columns=[
-                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-                    'ece_flag_number', 'cwr_flag_number', 'syn_count', 'fin_count', 'rst_count', 
-                    'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC', 'DHCP', 'ARP', 'IGMP', 'IPv', 'LLC', 
-                    'Min', 'IAT', 'Number', 'Variance'])
+                    'ICMP', 'IGMP', 'IPv', 'ARP', 'LLC', 'SMTP', 'Telnet', 'ece_flag_number', 'cwr_flag_number',
+                    'DHCP', 'IRC', 'SSH', 'fin_count', 'DNS', 'fin_flag_number', 'TCP', 'HTTP', 'rst_count'])
 
                 # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
                 stage1_np = stage1_df.to_numpy()
