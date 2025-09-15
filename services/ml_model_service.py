@@ -201,7 +201,8 @@ class MLModelService:
                 flow_data = {
                     'byte_count': packet_size,
                     'header_len': features['Header_Length'],
-                    'ts': features['ts']  # Use ts from features for flow tracking
+                    'ts': features['ts'],  # Use ts from features for flow tracking
+                    'raw_packet': packet  # Store raw packet for PCAP logging
                 }
                 self.tcpflows[flow_key].append(flow_data)
                 
@@ -221,7 +222,8 @@ class MLModelService:
                 flow_data = {
                     'byte_count': packet_size,
                     'header_len': features['Header_Length'],
-                    'ts': features['ts']  # Use ts from features for flow tracking
+                    'ts': features['ts'],  # Use ts from features for flow tracking
+                    'raw_packet': packet  # Store raw packet for PCAP logging
                 }
                 self.udpflows[flow_key].append(flow_data)
                 
@@ -374,12 +376,13 @@ class MLModelService:
                 # Build a single full DataFrame
                 full_df = pd.DataFrame([aggregated], columns=self.columns)
 
-                stage1_df = full_df.drop(columns=[
-                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-                    'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
-                    'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
-                    'IAT', 'Number'
-                ])
+                stage1_df = full_df
+                # .drop(columns=[
+                #     'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
+                #     'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
+                #     'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
+                #     'IAT', 'Number'
+                # ])
                 stage2_df = full_df.drop(columns=[
                     'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
                     'ece_flag_number', 'cwr_flag_number', 'syn_count', 'fin_count', 'rst_count', 
@@ -425,6 +428,11 @@ class MLModelService:
                 
                 # Store recent result for WebSocket access
                 self.recent_results.append(batch_info)
+                
+                # Log threat DataFrame if threat detected
+                if is_threat:
+                    from services.threat_logger import threat_logger
+                    threat_logger.log_threat_dataframe(batch_info, full_df, batch_data)
                 
                 # Debug logging
                 print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
