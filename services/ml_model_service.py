@@ -376,18 +376,15 @@ class MLModelService:
                 # Build a single full DataFrame
                 full_df = pd.DataFrame([aggregated], columns=self.columns)
 
-                stage1_df = full_df
-                # .drop(columns=[
-                #     'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-                #     'ack_flag_number', 'ece_flag_number', 'cwr_flag_number', 'syn_count',
-                #     'fin_count', 'rst_count', 'Telnet', 'SMTP', 'SSH', 'IRC', 'ARP', 'IGMP', 'LLC',
-                #     'IAT', 'Number'
-                # ])
+                stage1_df = full_df.drop(columns=[
+                    'fin_flag_number', 'rst_flag_number', 'ece_flag_number', 'cwr_flag_number',
+                    'fin_count', 'rst_count', 'HTTP', 'Telnet','SMTP', 'SSH', 'DHCP', 'ARP',
+                    'ICMP', 'IGMP', 'LLC', 'IPv'])
+
                 stage2_df = full_df.drop(columns=[
-                    'fin_flag_number', 'syn_flag_number', 'rst_flag_number', 'psh_flag_number',
-                    'ece_flag_number', 'cwr_flag_number', 'syn_count', 'fin_count', 'rst_count', 
-                    'DNS', 'Telnet', 'SMTP', 'SSH', 'IRC', 'DHCP', 'ARP', 'IGMP', 'IPv', 'LLC', 
-                    'Min', 'IAT', 'Number', 'Variance'])
+                    'fin_flag_number', 'rst_flag_number', 'ece_flag_number', 'cwr_flag_number',
+                    'fin_count',  'rst_count', 'ICMP', 'IGMP', 'IPv', 'ARP', 'LLC', 'SMTP', 'Telnet', 
+                    'DHCP', 'IRC', 'SSH',  'DNS', 'TCP', 'HTTP'])
 
                 # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
                 stage1_np = stage1_df.to_numpy()
@@ -432,7 +429,7 @@ class MLModelService:
                 # Log threat DataFrame if threat detected
                 if is_threat:
                     from services.threat_logger import threat_logger
-                    threat_logger.log_threat_dataframe(batch_info, full_df, batch_data)
+                    threat_logger.log_threat_dataframe(batch_info, full_df)
                 
                 # Debug logging
                 print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
