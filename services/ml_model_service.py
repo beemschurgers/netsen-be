@@ -335,7 +335,7 @@ class MLModelService:
                     'Header_Length': df['Header_Length'].mean(),
                     'Protocol Type': df['Protocol Type'].mode().iloc[0] if len(df['Protocol Type'].mode()) > 0 else 0,
                     'Time_To_Live': df['Time_To_Live'].mean(),
-                    'Rate': len(df) / (df['ts'].max() - df['ts'].min()),
+                    'Rate': (len(df) / (df['ts'].max() - df['ts'].min())) if (df['ts'].max() - df['ts'].min()) > 0 else 0,
                     'fin_flag_number': df['fin_flag_number'].sum() / len(df),
                     'syn_flag_number': df['syn_flag_number'].sum() / len(df),
                     'rst_flag_number': df['rst_flag_number'].sum() / len(df),
@@ -387,8 +387,9 @@ class MLModelService:
                     'DHCP', 'IRC', 'SSH',  'DNS', 'TCP', 'HTTP'])
 
                 # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
-                stage1_np = stage1_df.to_numpy()
-                stage2_np = stage2_df.to_numpy()
+                stage1_np = stage1_df
+                stage2_np = stage2_df
+                prediction_start = time.time()
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     future_stage1 = executor.submit(self.stage1_model.predict, stage1_np)
                     future_stage2 = executor.submit(self.stage2_model.predict, stage2_np)
@@ -399,10 +400,11 @@ class MLModelService:
                         label = str(stage2_out)
                     else:
                         label = 'BENIGN'
-                
+                prediction_ms = round((time.time() - prediction_start) * 1000.0, 2)
+
                 # Get timestamp
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
+
                 # Prepare batch info
                 flow_key_value = None
                 if 'flow_key' in df.columns:
@@ -420,7 +422,8 @@ class MLModelService:
                     "is_threat": is_threat,
                     "threat_type": label if is_threat else None,
                     "threat_dataframe": stage1_df.to_dict('records')[0] if is_threat else None,
-                    "main_dataframe": stage2_df.to_dict('records')[0] if stage2_df is not None else None
+                    "main_dataframe": stage2_df.to_dict('records')[0] if stage2_df is not None else None,
+                    "prediction_ms": prediction_ms
                 }
                 
                 # Store recent result for WebSocket access
@@ -432,7 +435,7 @@ class MLModelService:
                     threat_logger.log_threat_dataframe(batch_info, full_df)
                 
                 # Debug logging
-                print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label}")
+                print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label} | Latency: {prediction_ms}ms")
                 
                 return batch_info
                 
