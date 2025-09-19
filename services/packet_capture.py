@@ -9,7 +9,7 @@ from .scapy_packet_capture import scapy_analyzer
 packet_analyzer = scapy_analyzer
 
 async def packet_capture_websocket(websocket: WebSocket):
-    """Scapy-based packet capture WebSocket"""
+    """Scapy-based packet capture WebSocket with proper async handling"""
     await websocket.accept()
     print("Packet capture WebSocket connected")
     
@@ -27,24 +27,42 @@ async def packet_capture_websocket(websocket: WebSocket):
         # Start packet capture
         await packet_analyzer.start_capture(interface=None)
         
+        # Give capture some time to start
+        await asyncio.sleep(1)
+
         while True:
-            # Get captured packet data
-            packet_data = packet_analyzer.get_packet()
+            try:
+                # Wait for new packets with timeout
+                packet_data = None
 
-            # Get comprehensive statistics
-            statistics = packet_analyzer.get_comprehensive_statistics()
+                # Check if we have any packets
+                if packet_analyzer.packets:
+                    packet_data = packet_analyzer.get_packet()
 
-            # Create response with both packet and statistics
-            response = {
-                "traffic": packet_data,
-                "statistics": statistics
-            }
+                # Get comprehensive statistics (always available)
+                statistics = packet_analyzer.get_comprehensive_statistics()
 
-            await websocket.send_json(response)
+                # Create response with both packet and statistics
+                response = {
+                    "traffic": packet_data,
+                    "statistics": statistics
+                }
 
-            # Small delay to prevent overwhelming the client
-            await asyncio.sleep(0.5)
-            
+                await websocket.send_json(response)
+
+                # Wait before next update - this prevents overwhelming the client
+                await asyncio.sleep(1)  # Send updates every second
+
+            except asyncio.TimeoutError:
+                # Send statistics even if no new packets
+                statistics = packet_analyzer.get_comprehensive_statistics()
+                response = {
+                    "traffic": None,
+                    "statistics": statistics
+                }
+                await websocket.send_json(response)
+                await asyncio.sleep(1)
+
     except WebSocketDisconnect:
         print("Packet capture WebSocket disconnected")
         packet_analyzer.stop_capture()

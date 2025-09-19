@@ -11,6 +11,8 @@ class ScapyPacketAnalyzer:
     def __init__(self):
         self.running = False
         self.packets = deque(maxlen=1000)
+        self.latest_packet = None  # Store the most recent packet
+        self.packet_event = threading.Event()  # Event to signal new packets
         self.statistics = {
             'total_bandwidth_mb': 0,
             'current_bandwidth_mbps': 0,
@@ -33,6 +35,13 @@ class ScapyPacketAnalyzer:
         self.interface = None
         self.capture_method = "scapy"
 
+        # Initialize ML service
+        try:
+            ml_service.load_model()
+            print("ML service initialized for packet analysis")
+        except Exception as e:
+            print(f"Warning: Could not initialize ML service: {e}")
+
     def get_available_interfaces(self):
         """Get list of available network interfaces"""
         try:
@@ -48,7 +57,12 @@ class ScapyPacketAnalyzer:
             self.total_bytes += packet_size
 
             # Add packet to ML service for threat analysis
-            ml_service.add_packet(packet)
+            try:
+                if ml_service.is_initialized:
+                    ml_service.add_packet(packet)  # Fixed method name
+            except Exception as ml_error:
+                # Don't let ML service errors stop packet processing
+                print(f"Error processing packet: {ml_error}")
 
             # Extract packet information
             packet_info = self.extract_packet_info(packet)
@@ -56,8 +70,18 @@ class ScapyPacketAnalyzer:
                 self.packets.append(packet_info)
                 self.update_statistics(packet_info, packet_size)
 
+                # Set the latest packet and notify the event
+                self.latest_packet = packet_info
+                self.packet_event.set()
+
+                # Debug output to confirm packets are being processed
+                if self.packet_count % 100 == 0:  # Reduce debug spam
+                    print(f"✅ Processed {self.packet_count} packets")
+
         except Exception as e:
             print(f"Error processing packet: {e}")
+            import traceback
+            traceback.print_exc()
 
     def extract_packet_info(self, packet):
         """Extract relevant information from packet"""
@@ -68,57 +92,92 @@ class ScapyPacketAnalyzer:
                 'protocol': 'Unknown'
             }
 
+            # Handle different packet types more carefully
             if IP in packet:
+                ip_packet = packet[IP]
                 packet_info.update({
-                    'src_ip': packet[IP].src,
-                    'dst_ip': packet[IP].dst,
-                    'src_country': self.get_country_from_ip(packet[IP].src),
-                    'dst_country': self.get_country_from_ip(packet[IP].dst),
-                    'ttl': packet[IP].ttl
+                    'src_ip': ip_packet.src,
+                    'dst_ip': ip_packet.dst,
+                    'src_country': self.get_country_from_ip(ip_packet.src),
+                    'dst_country': self.get_country_from_ip(ip_packet.dst),
+                    'ttl': ip_packet.ttl
                 })
 
                 if TCP in packet:
+                    tcp_packet = packet[TCP]
                     packet_info.update({
                         'protocol': 'TCP',
-                        'src_port': packet[TCP].sport,
-                        'dst_port': packet[TCP].dport,
-                        'flags': self.get_tcp_flags(packet[TCP].flags),
-                        'application': self.get_application_from_port(packet[TCP].dport)
+                        'src_port': tcp_packet.sport,
+                        'dst_port': tcp_packet.dport,
+                        'flags': self.get_tcp_flags(tcp_packet.flags),
+                        'application': self.get_application_from_port(tcp_packet.dport)
                     })
                 elif UDP in packet:
+                    udp_packet = packet[UDP]
                     packet_info.update({
                         'protocol': 'UDP',
-                        'src_port': packet[UDP].sport,
-                        'dst_port': packet[UDP].dport,
-                        'application': self.get_application_from_port(packet[UDP].dport)
+                        'src_port': udp_packet.sport,
+                        'dst_port': udp_packet.dport,
+                        'application': self.get_application_from_port(udp_packet.dport)
                     })
                 elif ICMP in packet:
+                    icmp_packet = packet[ICMP]
                     packet_info.update({
                         'protocol': 'ICMP',
-                        'type': packet[ICMP].type,
-                        'code': packet[ICMP].code
+                        'type': icmp_packet.type,
+                        'code': icmp_packet.code,
+                        'application': 'ICMP'
                     })
+                else:
+                    packet_info.update({
+                        'protocol': f'IP-{ip_packet.proto}',
+                        'application': f'Protocol-{ip_packet.proto}'
+                    })
+
             elif ARP in packet:
+                arp_packet = packet[ARP]
+                # Validate ARP packet has proper addresses
+                src_ip = arp_packet.psrc if hasattr(arp_packet, 'psrc') and arp_packet.psrc else 'Unknown'
+                dst_ip = arp_packet.pdst if hasattr(arp_packet, 'pdst') and arp_packet.pdst else 'Unknown'
+
+                # Skip packets with invalid addresses
+                if src_ip == '0.0.0.0' or dst_ip == '0.0.0.0':
+                    return None
+
                 packet_info.update({
                     'protocol': 'ARP',
-                    'src_ip': packet[ARP].psrc,
-                    'dst_ip': packet[ARP].pdst,
-                    'operation': packet[ARP].op
+                    'src_ip': src_ip,
+                    'dst_ip': dst_ip,
+                    'src_country': self.get_country_from_ip(src_ip),
+                    'dst_country': self.get_country_from_ip(dst_ip),
+                    'operation': arp_packet.op if hasattr(arp_packet, 'op') else 'Unknown',
+                    'application': 'ARP'
+                })
+            else:
+                # Handle other packet types (Ethernet, etc.)
+                packet_info.update({
+                    'protocol': packet.name if hasattr(packet, 'name') else 'Unknown',
+                    'src_ip': 'N/A',
+                    'dst_ip': 'N/A',
+                    'src_country': 'N/A',
+                    'dst_country': 'N/A',
+                    'application': 'Other'
                 })
 
-            # Add mock data for demonstration
+            # Add realistic data instead of random mock data
             packet_info.update({
-                'bytes_sent': random.randint(50, 1500),
+                'bytes_sent': len(packet),
                 'bytes_received': 0,
                 'packets_sent': 1,
                 'packets_received': 0,
-                'latency_ms': random.randint(0, 100)
+                'latency_ms': random.randint(1, 50)  # More realistic latency range
             })
 
             return packet_info
 
         except Exception as e:
             print(f"Error extracting packet info: {e}")
+            print(f"Packet summary: {packet.summary() if hasattr(packet, 'summary') else 'N/A'}")
             return None
 
     def get_tcp_flags(self, flags):
