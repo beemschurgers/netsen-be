@@ -9,6 +9,7 @@ from scapy.all import sniff, IP, TCP, UDP, ICMP, ARP
 import os
 import queue
 from concurrent.futures import ThreadPoolExecutor
+import joblib
 
 
 class MLModelService:
@@ -67,7 +68,7 @@ class MLModelService:
 
             stage2_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage2_model.pkl')
             with open(stage2_model_path, 'rb') as f:
-                self.stage2_model = pickle.load(f)
+                self.stage2_model = joblib.load(f)
 
             self.is_initialized = True
             print("All ML Models loaded successfully!")
@@ -382,9 +383,8 @@ class MLModelService:
                     'ICMP', 'IGMP', 'LLC', 'IPv'])
 
                 stage2_df = full_df.drop(columns=[
-                    'fin_flag_number', 'rst_flag_number', 'ece_flag_number', 'cwr_flag_number',
-                    'fin_count',  'rst_count', 'ICMP', 'IGMP', 'IPv', 'ARP', 'LLC', 'SMTP', 'Telnet', 
-                    'DHCP', 'IRC', 'SSH',  'DNS', 'TCP', 'HTTP'])
+                    'ICMP', 'IGMP', 'IPv', 'ARP', 'LLC', 'SMTP', 'Telnet', 'ece_flag_number', 'cwr_flag_number', 
+                    'DHCP', 'IRC', 'SSH', 'fin_count', 'DNS', 'fin_flag_number', 'TCP', 'HTTP', 'rst_count'])
 
                 # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
                 stage1_np = stage1_df
