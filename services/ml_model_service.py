@@ -9,6 +9,7 @@ from scapy.all import sniff, IP, TCP, UDP, ICMP, ARP
 import os
 import queue
 from concurrent.futures import ThreadPoolExecutor
+import joblib
 
 
 class MLModelService:
@@ -24,13 +25,15 @@ class MLModelService:
         self.capture_duration = capture_duration
         self.max_batch_wait_seconds = 3
         
-        # Feature columns for ML models (reduced to match model expectations)
+        # Feature columns for ML models
         self.columns = [
             "Header_Length", "Protocol Type", "Time_To_Live", "Rate",
             "fin_flag_number", "syn_flag_number", "rst_flag_number",
             "psh_flag_number", "ack_flag_number", "ece_flag_number", "cwr_flag_number",
             "ack_count", "syn_count", "fin_count", "rst_count",
-            "HTTP", "HTTPS", "DNS", "Telnet", "SMTP"
+            "HTTP", "HTTPS", "DNS", "Telnet", "SMTP", "SSH", "IRC", 
+            "TCP", "UDP", "DHCP", "ARP", "ICMP", "IGMP", "IPv", "LLC",
+            "Tot sum", "Min", "Max", "AVG", "Std", "Tot size", "IAT", "Number", "Variance"
         ]
         
         # Flow tracking
@@ -86,6 +89,12 @@ class MLModelService:
 
             # Try to load stage2 model
             stage2_model_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'stage2_model.pkl')
+            with open(stage2_model_path, 'rb') as f:
+                self.stage2_model = joblib.load(f)
+
+            self.is_initialized = True
+            print("All ML Models loaded successfully!")
+            return True
             print(f"Looking for stage2 model at: {stage2_model_path}")
 
             if os.path.exists(stage2_model_path):
@@ -340,6 +349,63 @@ class MLModelService:
 
             return predictions
 
+                stage2_df = full_df.drop(columns=[
+                    'ICMP', 'IGMP', 'IPv', 'ARP', 'LLC', 'SMTP', 'Telnet', 'ece_flag_number', 'cwr_flag_number',
+                    'DHCP', 'IRC', 'SSH', 'fin_count', 'DNS', 'fin_flag_number', 'TCP', 'HTTP', 'rst_count'])
+
+                # Run both predictions concurrently; only display Stage 2 result when Stage 1 flags a threat
+                stage1_np = stage1_df
+                stage2_np = stage2_df
+                prediction_start = time.time()
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future_stage1 = executor.submit(self.stage1_model.predict, stage1_np)
+                    future_stage2 = executor.submit(self.stage2_model.predict, stage2_np)
+                    stage1_out = future_stage1.result()[0]
+                    is_threat = bool(stage1_out)  # Assuming binary classification (0=benign, 1=threat)
+                    if is_threat:
+                        stage2_out = future_stage2.result()[0]
+                        label = str(stage2_out)
+                    else:
+                        label = 'BENIGN'
+                prediction_ms = round((time.time() - prediction_start) * 1000.0, 2)
+
+                # Get timestamp
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Prepare batch info
+                flow_key_value = None
+                if 'flow_key' in df.columns:
+                    try:
+                        flow_key_value = df['flow_key'].mode().iloc[0]
+                    except Exception:
+                        flow_key_value = df['flow_key'].iloc[0]
+
+                batch_info = {
+                    "timestamp": timestamp,
+                    "flow_key": flow_key_value,
+                    "packet_count": len(df),
+                    "total_bytes": aggregated['Tot size'],
+                    "predicted_label": label,
+                    "is_threat": is_threat,
+                    "threat_type": label if is_threat else None,
+                    "threat_dataframe": stage1_df.to_dict('records')[0] if is_threat else None,
+                    "main_dataframe": stage2_df.to_dict('records')[0] if stage2_df is not None else None,
+                    "prediction_ms": prediction_ms
+                }
+                
+                # Store recent result for WebSocket access
+                self.recent_results.append(batch_info)
+                
+                # Log threat DataFrame if threat detected
+                if is_threat:
+                    from services.threat_logger import threat_logger
+                    threat_logger.log_threat_dataframe(batch_info, full_df)
+                
+                # Debug logging
+                print(f"FLOW PROCESSED: {flow_key_value} | Packets: {len(df)} | Threat: {is_threat} | Label: {label} | Latency: {prediction_ms}ms")
+                
+                return batch_info
+                
         except Exception as e:
             print(f"Error processing batch with ML: {e}")
             return []
@@ -400,4 +466,4 @@ class MLModelService:
 
 # Global ML service instance
 ml_service = MLModelService()
-ml_service.start_batch_processing()
+
